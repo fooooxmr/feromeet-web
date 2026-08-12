@@ -28,7 +28,6 @@ export function PhoneScreen() {
   const [mode, setMode] = useState<'login' | 'registration'>('login');
   const [error, setError] = useState('');
   const setPhoneNumber = useSessionStore((state) => state.setPhoneNumber);
-  const enterDemo = useSessionStore((state) => state.enterDemo);
   const valid = belarusLocalDigits(phone).length === 9;
 
   const requestCode = async (overrideMode?: 'login' | 'registration') => {
@@ -107,14 +106,6 @@ export function PhoneScreen() {
         onPress={() => void requestCode()}
       />
       {!!error && <Text style={styles.error}>{error}</Text>}
-      <Button
-        label="Посмотреть demo"
-        variant="secondary"
-        onPress={() => {
-          enterDemo();
-          router.replace('/swipes');
-        }}
-      />
       <Text style={styles.legal}>
         Продолжая, вы принимаете условия сервиса и политику конфиденциальности.
       </Text>

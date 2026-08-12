@@ -1,11 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('demo covers discovery, invite, meets and profile', async ({ page }) => {
-  const consoleErrors: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(message.text());
-  });
-
+test('login screen has no demo entry', async ({ page }) => {
   await page.addInitScript(() => {
     try {
       sessionStorage.removeItem('feromeet.demo');
@@ -18,7 +13,24 @@ test('demo covers discovery, invite, meets and profile', async ({ page }) => {
   await expect(page.getByText('Вход по SMS')).toBeVisible();
   await expect(page.getByText('+375')).toBeVisible();
   await expect(page.getByPlaceholder('29 000 00 00')).toBeVisible();
-  await page.getByText('Посмотреть demo', { exact: true }).click({ force: true });
+  await expect(page.getByText('Посмотреть demo')).toHaveCount(0);
+});
+
+test('demo covers discovery, invite, meets and profile', async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+
+  await page.addInitScript(() => {
+    try {
+      sessionStorage.setItem('feromeet.demo', '1');
+      localStorage.removeItem('feromeet.session');
+    } catch {
+      /* ignore */
+    }
+  });
+  await page.goto('./');
 
   await expect(page).toHaveURL(/\/swipes\/?$/);
   await expect(page.getByLabel('Пригласить').first()).toBeVisible();
