@@ -14,9 +14,15 @@ const routes = [
   /^api\/reaction\/(?:get-all-reactions|add-like|add-dislike|add-favorite|remove-favorite)$/,
   /^api\/meet\/(?:invite|get-active-meets|get-passed-meets|get-by-id|get-impression-tags|rate|hide|mark-as-read|cancel)$/,
   /^api\/meet\/stage[123]\/(?:accept-by-victim|consent-from-hunter|consent-from-victim|arrival-from-hunter|arrival-from-victim)$/,
+  /^api\/chat\/get-history$/,
   /^api\/meet\/api\/chat\/get-history$/,
   /^ws-chat\/info$/,
 ];
+
+const HISTORY_PATHS = new Set([
+  'api/chat/get-history',
+  'api/meet/api/chat/get-history',
+]);
 
 const QUERY_KEYS = ['chatId', 'userId', 'meetId', 'sex', 'role'] as const;
 
@@ -41,6 +47,8 @@ function corsHeaders(origin: string | null) {
       'Access-Control-Allow-Origin': allowed && origin ? origin : 'null',
       'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
       'Access-Control-Allow-Headers': 'Authorization,Content-Type',
+      'Access-Control-Expose-Headers':
+        'X-Proxy-Upstream,X-Proxy-Has-Authorization',
       'Access-Control-Max-Age': '86400',
       Vary: 'Origin',
     },
@@ -113,6 +121,22 @@ function resolveSearch(request: VercelRequest): string {
   }
   const query = params.toString();
   return query ? `?${query}` : '';
+}
+
+function chatIdFromRequest(request: VercelRequest): string {
+  const search = resolveSearch(request);
+  return new URLSearchParams(search.startsWith('?') ? search.slice(1) : search).get(
+    'chatId',
+  ) || '';
+}
+
+function resolveUpstreamUrl(request: VercelRequest, path: string): string {
+  if (HISTORY_PATHS.has(path)) {
+    const chatId = chatIdFromRequest(request);
+    const url = `${UPSTREAM}/api/chat/get-history`;
+    return chatId ? `${url}?chatId=${encodeURIComponent(chatId)}` : url;
+  }
+  return `${UPSTREAM}/${path}${resolveSearch(request)}`;
 }
 
 function isRateLimited(request: VercelRequest): boolean {
@@ -191,12 +215,40 @@ export default async function handler(
   headers.set('Accept', 'application/json');
   headers.set('User-Agent', 'okhttp/4.12.0');
 
+  const upstreamUrl = resolveUpstreamUrl(request, path);
+  response.setHeader('X-Proxy-Upstream', upstreamUrl);
+  response.setHeader('X-Proxy-Has-Authorization', authorization ? '1' : '0');
+  response.setHeader('Cache-Control', 'no-store');
+
+  const echo =
+    headerValue(request.query.__echo) === '1' ||
+    headerValue(request.headers['x-proxy-debug']) === '1';
+  if (echo) {
+    response.status(200).json({
+      method: request.method,
+      path,
+      upstreamUrl,
+      hasAuthorization: Boolean(authorization),
+      chatId: chatIdFromRequest(request) || null,
+    });
+    return;
+  }
+
   try {
     const body =
       request.method === 'GET' || request.method === 'DELETE'
         ? undefined
         : await readBody(request);
-    const upstream = await fetch(`${UPSTREAM}/${path}${resolveSearch(request)}`, {
+    console.info(
+      JSON.stringify({
+        proxy: 'forward',
+        method: request.method,
+        path,
+        upstreamUrl,
+        hasAuthorization: Boolean(authorization),
+      }),
+    );
+    const upstream = await fetch(upstreamUrl, {
       method: request.method,
       headers,
       body,
@@ -204,7 +256,6 @@ export default async function handler(
     });
     const upstreamType = upstream.headers.get('content-type');
     if (upstreamType) response.setHeader('Content-Type', upstreamType);
-    response.setHeader('Cache-Control', 'no-store');
     response.status(upstream.status).send(Buffer.from(await upstream.arrayBuffer()));
   } catch (error) {
     if (error instanceof Error && error.message === 'BODY_TOO_LARGE') {

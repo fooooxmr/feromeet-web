@@ -1,4 +1,4 @@
-import { apiRequest, queryString } from '../client';
+import { API_BASE_URL, apiRequest, queryString } from '../client';
 import type {
   AuthTokens,
   FeromeetUser,
@@ -113,16 +113,17 @@ export const meetsApi = {
 };
 
 export const chatApi = {
-  getHistory: (chatId: string) =>
-    apiRequest<unknown>(
-      `/api/meet/api/chat/get-history${queryString({ chatId })}`,
-    ).then((payload) => {
+  getHistory: (chatId: string) => {
+    const path = `/api/chat/get-history${queryString({ chatId })}`;
+    console.info('[feromeet] getHistory', `${API_BASE_URL}${path}`);
+    return apiRequest<unknown>(path).then((payload) => {
       const messages = normalizeChatMessages(payload);
       if (payload != null && messages.length === 0 && !Array.isArray(payload)) {
         console.warn('[feromeet] chat history payload was not a message list', payload);
       }
       return messages;
-    }),
+    });
+  },
 };
 
 export const profileApi = {
