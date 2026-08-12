@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiRequest, configureTokenStorage, queryString, API_BASE_URL } from './client';
-import { normalizePhone } from '../domain/models';
+import {
+  belarusLocalDigits,
+  formatBelarusPhoneMask,
+  normalizePhone,
+} from '../domain/models';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -20,6 +24,13 @@ describe('normalizePhone', () => {
     expect(normalizePhone('+375 29 123-45-67')).toBe('+375291234567');
     expect(normalizePhone('80291234567')).toBe('+375291234567');
     expect(normalizePhone('291234567')).toBe('+375291234567');
+  });
+
+  it('keeps Belarus-only local digits for the visual mask', () => {
+    expect(belarusLocalDigits('+375 29 123-45-67')).toBe('291234567');
+    expect(formatBelarusPhoneMask('291234567')).toBe('29 123 45 67');
+    expect(formatBelarusPhoneMask('29')).toBe('29');
+    expect(normalizePhone('29 123 45 67')).toBe('+375291234567');
   });
 });
 
@@ -86,5 +97,37 @@ describe('apiRequest', () => {
       status: 400,
       message: 'Аккаунт не найден. Проверьте номер или создайте аккаунт.',
     });
+  });
+
+  it('retries 403 after refreshing the access token', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: 'Forbidden' }), { status: 403 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            accessToken: 'next',
+            refreshToken: 'refresh',
+            registrationStatus: 'REGISTERED',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    configureTokenStorage(
+      () => ({ accessToken: 'stale', refreshToken: 'refresh' }),
+      () => undefined,
+    );
+
+    await expect(apiRequest<{ ok: boolean }>('/users')).resolves.toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });

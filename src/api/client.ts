@@ -132,7 +132,7 @@ export async function apiRequest<T>(
       signal: controller.signal,
     });
 
-    if (response.status === 401 && auth) {
+    if ((response.status === 401 || response.status === 403) && auth) {
       const renewedToken = await refreshAccessToken();
       if (renewedToken) {
         requestHeaders.set('Authorization', `Bearer ${renewedToken}`);

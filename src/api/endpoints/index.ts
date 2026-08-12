@@ -1,14 +1,20 @@
 import { apiRequest, queryString } from '../client';
 import type {
   AuthTokens,
-  ChatMessage,
   FeromeetUser,
   InviteRequest,
   Meet,
   RateMeetRequest,
   SearchPreference,
 } from '../../domain/models';
-import { unwrapReactions, unwrapList, normalizeMeet, normalizeMeets, normalizePhone } from '../../domain/models';
+import {
+  unwrapReactions,
+  unwrapList,
+  normalizeMeet,
+  normalizeMeets,
+  normalizePhone,
+  normalizeChatMessages,
+} from '../../domain/models';
 
 const post = <T>(path: string, body?: unknown, auth = true) =>
   apiRequest<T>(path, { method: 'POST', body, auth });
@@ -110,7 +116,7 @@ export const chatApi = {
   getHistory: (chatId: string) =>
     apiRequest<unknown>(
       `/api/meet/api/chat/get-history${queryString({ chatId })}`,
-    ).then((payload) => unwrapList<ChatMessage>(payload)),
+    ).then(normalizeChatMessages),
 };
 
 export const profileApi = {

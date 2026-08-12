@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   PanResponder,
@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import {
   ageFromBirthday,
+  matchesSearchPreference,
   photoUrl,
   userPhotos,
   type ExpenseType,
@@ -19,12 +20,13 @@ import {
 } from '../../domain/models';
 import { FEROTAG_OPTIONS, formatTag, userChips } from '../../domain/tags';
 import { people } from '../demo/fixtures';
-import { Button, Chip, Field, HeartMark, Photo, ScreenState, Sheet, TagChip } from '../../components/ui';
+import { Button, Chip, Field, HeartMark, Photo, ScreenState, Sheet, SliderField, TagChip } from '../../components/ui';
 import { colors, fontFamily, gradient, radius, shadow, spacing } from '../../theme/tokens';
 import { discoveryApi } from '../../api/endpoints';
 import { ApiError } from '../../api/client';
 import { useSessionStore } from '../../state/session';
 import { useShellStore } from '../../state/shell';
+import { useIsDesktop } from '../../theme/layout';
 
 const EXPENSE_OPTIONS: Array<{ type: ExpenseType; title: string; subtitle: string; icon: string }> = [
   { type: 'I_PAY', title: 'Я угощаю', subtitle: 'Всё включено', icon: '🤝' },
@@ -86,6 +88,49 @@ function DiscoveryCard({
         </View>
       </View>
     </Pressable>
+  );
+}
+
+function ProfileDetails({
+  person,
+  onInvite,
+}: {
+  person: FeromeetUser;
+  onInvite?: () => void;
+}) {
+  const age = displayAge(person);
+  const photos = userPhotos(person);
+  const chips = userChips(person);
+  return (
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.profileBody}>
+      <Text style={styles.profileName}>
+        {person.name.trim()}
+        {age ? `, ${age}` : ''}
+      </Text>
+      <Text style={styles.profileMeta}>
+        {[person.city, person.height ? `${person.height} см` : undefined]
+          .filter(Boolean)
+          .join(' · ')}
+        {person.rating != null ? `   ★  ${person.rating}` : ''}
+      </Text>
+      <Text style={styles.profileAbout}>{person.textAbout || 'Пока без описания'}</Text>
+      <View style={styles.tagRow}>
+        {chips.map((tag) => (
+          <TagChip key={tag.key || tag.label} tag={tag} />
+        ))}
+      </View>
+      {photos.length > 1 && (
+        <View style={styles.photoStrip}>
+          {photos.slice(0, 5).map((filename) => {
+            const uri = photoUrl(filename);
+            return uri ? (
+              <Photo key={filename} uri={uri} style={styles.stripPhoto} accessibilityLabel={person.name} />
+            ) : null;
+          })}
+        </View>
+      )}
+      {onInvite ? <Button label="Пригласить" onPress={onInvite} /> : null}
+    </ScrollView>
   );
 }
 
@@ -222,23 +267,27 @@ function FilterSheet({
           />
         ))}
       </View>
-      <Field
+      <SliderField
         label="Возраст от"
-        keyboardType="numeric"
-        value={String(draft.ageMin)}
-        onChangeText={(value) => setDraft({ ...draft, ageMin: Number(value) || 18 })}
+        min={18}
+        max={45}
+        value={draft.ageMin}
+        onChange={(ageMin) => setDraft({ ...draft, ageMin: Math.min(ageMin, draft.ageMax) })}
       />
-      <Field
+      <SliderField
         label="Возраст до"
-        keyboardType="numeric"
-        value={String(draft.ageMax)}
-        onChangeText={(value) => setDraft({ ...draft, ageMax: Number(value) || 45 })}
+        min={18}
+        max={45}
+        value={draft.ageMax}
+        onChange={(ageMax) => setDraft({ ...draft, ageMax: Math.max(ageMax, draft.ageMin) })}
       />
-      <Field
-        label="Радиус, км"
-        keyboardType="numeric"
-        value={String(draft.radius)}
-        onChangeText={(value) => setDraft({ ...draft, radius: Number(value) || 25 })}
+      <SliderField
+        label="Радиус"
+        min={1}
+        max={200}
+        suffix=" км"
+        value={draft.radius}
+        onChange={(radius) => setDraft({ ...draft, radius })}
       />
       <Button label="Сохранить" onPress={() => onSave(draft)} />
     </Sheet>
@@ -247,15 +296,17 @@ function FilterSheet({
 
 export function DiscoveryScreen() {
   const demoMode = useSessionStore((state) => state.demoMode);
+  const hydrated = useSessionStore((state) => state.hydrated);
+  const desktop = useIsDesktop();
   const setOpenFilters = useShellStore((state) => state.setOpenFilters);
   const [remotePeople, setRemotePeople] = useState<FeromeetUser[]>();
   const [loading, setLoading] = useState(!demoMode);
   const [error, setError] = useState('');
-  const source = demoMode ? people : remotePeople ?? [];
   const [index, setIndex] = useState(0);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [inviteError, setInviteError] = useState('');
   const [preference, setPreference] = useState<SearchPreference>({
@@ -264,45 +315,72 @@ export function DiscoveryScreen() {
     ageMax: 45,
     radius: 25,
   });
+  const source = (demoMode ? people : remotePeople ?? []).filter((user) =>
+    matchesSearchPreference(user, preference),
+  );
   const person = source[index];
-  const drag = useRef(new Animated.ValueXY()).current;
+  const dragX = useRef(new Animated.Value(0)).current;
+  const rotate = dragX.interpolate({
+    inputRange: [-280, 0, 280],
+    outputRange: ['-14deg', '0deg', '14deg'],
+  });
 
   const loadUsers = () => {
     if (demoMode) return;
     setLoading(true);
+    const apply = (users: FeromeetUser[]) => {
+      setRemotePeople(Array.isArray(users) ? users : []);
+      setIndex(0);
+      setError('');
+    };
+    const fail = (requestError: unknown) => {
+      setRemotePeople([]);
+      setError(requestError instanceof ApiError ? requestError.message : 'Не удалось загрузить анкеты');
+    };
     discoveryApi
       .getUsers()
-      .then((users) => {
-        setRemotePeople(Array.isArray(users) ? users : []);
-        setError('');
-      })
+      .then(apply)
       .catch((requestError) => {
-        setRemotePeople([]);
-        setError(requestError instanceof ApiError ? requestError.message : 'Не удалось загрузить анкеты');
+        const status = requestError instanceof ApiError ? requestError.status : 0;
+        if (status === 403 || status === 401) {
+          return new Promise((resolve) => setTimeout(resolve, 400))
+            .then(() => discoveryApi.getUsers())
+            .then(apply)
+            .catch(fail);
+        }
+        fail(requestError);
       })
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
+    if (!hydrated) return;
     loadUsers();
     if (!demoMode) {
       discoveryApi.getPreference().then(setPreference).catch(() => undefined);
     }
-  }, [demoMode]);
+  }, [demoMode, hydrated]);
 
   useEffect(() => {
     setOpenFilters(() => setFilterOpen(true));
     return () => setOpenFilters(undefined);
   }, [setOpenFilters]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setPhotoIndex(0);
-    drag.setValue({ x: 0, y: 0 });
-  }, [index, drag]);
+    setProfileOpen(false);
+    dragX.setValue(0);
+  }, [index, dragX]);
 
   const skip = () => {
     if (!person) return;
     if (!demoMode) void discoveryApi.dislike(person.id).catch(() => undefined);
+    setIndex((value) => value + 1);
+  };
+
+  const like = () => {
+    if (!person) return;
+    if (!demoMode) void discoveryApi.like(person.id).catch(() => undefined);
     setIndex((value) => value + 1);
   };
 
@@ -346,49 +424,86 @@ export function DiscoveryScreen() {
   const pan = useMemo(
     () =>
       PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 8,
-        onPanResponderMove: Animated.event([null, { dx: drag.x, dy: drag.y }], {
-          useNativeDriver: false,
-        }),
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          Math.abs(gesture.dx) > 8 || (!desktop && Math.abs(gesture.dy) > 12),
+        onPanResponderMove: (_, gesture) => {
+          if (Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.15) {
+            dragX.setValue(0);
+            return;
+          }
+          dragX.setValue(gesture.dx);
+        },
         onPanResponderRelease: (_, gesture) => {
+          if (!desktop && gesture.dy > 90 && Math.abs(gesture.dy) > Math.abs(gesture.dx)) {
+            Animated.spring(dragX, { toValue: 0, useNativeDriver: false }).start();
+            setProfileOpen(true);
+            return;
+          }
           if (gesture.dx > 120 || gesture.vx > 0.8) {
-            Animated.timing(drag, { toValue: { x: 420, y: 0 }, duration: 180, useNativeDriver: false }).start(
-              () => setInviteOpen(true),
-            );
+            Animated.timing(dragX, { toValue: 520, duration: 180, useNativeDriver: false }).start(() => {
+              like();
+            });
           } else if (gesture.dx < -120 || gesture.vx < -0.8) {
-            Animated.timing(drag, { toValue: { x: -420, y: 0 }, duration: 180, useNativeDriver: false }).start(
-              skip,
-            );
+            Animated.timing(dragX, { toValue: -520, duration: 180, useNativeDriver: false }).start(() => {
+              skip();
+            });
           } else {
-            Animated.spring(drag, { toValue: { x: 0, y: 0 }, useNativeDriver: false }).start();
+            Animated.spring(dragX, { toValue: 0, useNativeDriver: false }).start();
           }
         },
       }),
-    [person, demoMode],
+    [desktop, person, demoMode],
   );
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const onKey = (event: KeyboardEvent) => {
-      if (inviteOpen || filterOpen) {
+      if (inviteOpen || filterOpen || profileOpen) {
         if (event.key === 'Escape') {
           setInviteOpen(false);
           setFilterOpen(false);
+          setProfileOpen(false);
         }
         return;
       }
       if (event.key === 'ArrowLeft') skip();
-      if (event.key === 'ArrowRight') setInviteOpen(true);
+      if (event.key === 'ArrowRight') like();
       if (event.key === 'Enter') setInviteOpen(true);
       if (event.key.toLowerCase() === 'f') toggleFavorite();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [inviteOpen, filterOpen, person]);
+  }, [inviteOpen, filterOpen, profileOpen, person]);
+
+  const card = person ? (
+    <Animated.View
+      key={person.id}
+      style={[styles.cardWrap, { transform: [{ translateX: dragX }, { rotate }] }]}
+      {...pan.panHandlers}
+    >
+      <DiscoveryCard
+        person={person}
+        photoIndex={photoIndex}
+        onNextPhoto={() => {
+          const photos = userPhotos(person);
+          setPhotoIndex((value) => (photos.length ? (value + 1) % photos.length : 0));
+        }}
+      />
+    </Animated.View>
+  ) : null;
+
+  const dock = person ? (
+    <ActionDock
+      favorite={person.isFavorite}
+      onSkip={skip}
+      onGo={() => setInviteOpen(true)}
+      onFavorite={toggleFavorite}
+    />
+  ) : null;
 
   return (
     <View style={styles.screen}>
-      {loading ? (
+      {loading || !hydrated ? (
         <ScreenState kind="loading" title="Загружаем анкеты" message="Это займёт секунду" />
       ) : !person ? (
         <ScreenState
@@ -397,24 +512,24 @@ export function DiscoveryScreen() {
           message={error || 'Новые анкеты появятся здесь совсем скоро.'}
           action={error ? loadUsers : undefined}
         />
+      ) : desktop ? (
+        <View style={styles.desktopBoard}>
+          <View style={styles.desktopCardCol}>
+            {card}
+            {dock}
+          </View>
+          <View style={styles.desktopProfile}>
+            <Text style={styles.profileKicker}>Профиль</Text>
+            <ProfileDetails person={person} onInvite={() => setInviteOpen(true)} />
+          </View>
+        </View>
       ) : (
         <View style={styles.stack}>
-          <Animated.View style={[styles.cardWrap, { transform: drag.getTranslateTransform() }]} {...pan.panHandlers}>
-            <DiscoveryCard
-              person={person}
-              photoIndex={photoIndex}
-              onNextPhoto={() => {
-                const photos = userPhotos(person);
-                setPhotoIndex((value) => (photos.length ? (value + 1) % photos.length : 0));
-              }}
-            />
-          </Animated.View>
-          <ActionDock
-            favorite={person.isFavorite}
-            onSkip={skip}
-            onGo={() => setInviteOpen(true)}
-            onFavorite={toggleFavorite}
-          />
+          {card}
+          {dock}
+          <Pressable onPress={() => setProfileOpen(true)} style={styles.pullHint}>
+            <Text style={styles.pullHintText}>Свайп вниз — профиль</Text>
+          </Pressable>
         </View>
       )}
 
@@ -428,6 +543,11 @@ export function DiscoveryScreen() {
           onInvite={(expense, ferotag, comment) => void invite(expense, ferotag, comment)}
         />
       )}
+      {person && !desktop && (
+        <Sheet visible={profileOpen} title={person.name.trim()} onClose={() => setProfileOpen(false)}>
+          <ProfileDetails person={person} />
+        </Sheet>
+      )}
       <FilterSheet
         visible={filterOpen}
         preference={preference}
@@ -435,17 +555,58 @@ export function DiscoveryScreen() {
         onSave={(value) => {
           setPreference(value);
           setFilterOpen(false);
+          setIndex(0);
           if (!demoMode) void discoveryApi.savePreference(value).then(loadUsers);
         }}
       />
     </View>
   );
 }
-
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  stack: { flex: 1, paddingHorizontal: 12, paddingBottom: 8 },
+  stack: { flex: 1, paddingHorizontal: 12, paddingBottom: 8, overflow: 'hidden' },
   cardWrap: { flex: 1 },
+  desktopBoard: {
+    flex: 1,
+    flexDirection: 'row',
+    padding: 28,
+    gap: 28,
+    backgroundColor: colors.stage,
+  },
+  desktopCardCol: {
+    width: 400,
+    flexGrow: 0,
+    flexShrink: 0,
+    alignSelf: 'stretch',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  desktopProfile: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: colors.canvas,
+    borderRadius: 28,
+    padding: 28,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  profileKicker: {
+    color: colors.berry,
+    fontWeight: '800',
+    fontSize: 12,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    fontFamily,
+  },
+  profileBody: { gap: 12, paddingBottom: 24 },
+  profileName: { color: colors.ink, fontSize: 32, fontWeight: '800', fontFamily },
+  profileMeta: { color: colors.muted, fontWeight: '600', fontFamily },
+  profileAbout: { color: colors.ink, fontSize: 16, lineHeight: 24, fontFamily },
+  photoStrip: { flexDirection: 'row', gap: 8 },
+  stripPhoto: { width: 72, height: 72, borderRadius: 16 },
+  pullHint: { alignItems: 'center', paddingBottom: 4 },
+  pullHintText: { color: colors.muted, fontSize: 12, fontFamily },
   card: {
     flex: 1,
     borderRadius: radius.lg,

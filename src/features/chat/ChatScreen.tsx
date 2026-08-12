@@ -23,6 +23,7 @@ export function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const accessToken = useSessionStore((state) => state.accessToken);
   const demoMode = useSessionStore((state) => state.demoMode);
+  const hydrated = useSessionStore((state) => state.hydrated);
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentUserId, setCurrentUserId] = useState('me');
@@ -34,9 +35,10 @@ export function ChatScreen() {
     demoMode ? 'preview' : 'offline',
   );
   const socketRef = useRef<FeromeetChatSocket | undefined>(undefined);
+  const listRef = useRef<ScrollView>(null);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || !hydrated) return;
     let active = true;
     if (demoMode) {
       setMessages(initialMessages);
@@ -69,7 +71,7 @@ export function ChatScreen() {
           setRecipientId(meet.user.id);
           if (!demoMode) void meetsApi.markAsRead(meet.meetId).catch(() => undefined);
         }
-        if (historyResult.status === 'fulfilled' && historyResult.value.length > 0) {
+        if (historyResult.status === 'fulfilled') {
           setMessages(historyResult.value);
           const ownId =
             profileResult.status === 'fulfilled' ? profileResult.value.id : 'me';
@@ -83,7 +85,7 @@ export function ChatScreen() {
       },
     );
 
-    if (accessToken && (process.env.EXPO_PUBLIC_WS_URL || typeof window === 'undefined')) {
+    if (accessToken) {
       setSocketState('connecting');
       const socket = new FeromeetChatSocket(accessToken, id, {
         onMessage: (message) => {
@@ -120,7 +122,7 @@ export function ChatScreen() {
       socketRef.current?.disconnect();
       socketRef.current = undefined;
     };
-  }, [accessToken, demoMode, id]);
+  }, [accessToken, demoMode, hydrated, id]);
 
   const send = () => {
     const content = draft.trim();
@@ -165,27 +167,44 @@ export function ChatScreen() {
           <Text style={styles.planText}>План встречи</Text>
         </Pressable>
       </View>
-      {messages.length > 0 && (
-        <View style={styles.dateBanner}>
-          <Text style={styles.dateText}>Сегодня</Text>
-        </View>
-      )}
-      <ScrollView contentContainerStyle={styles.messages} showsVerticalScrollIndicator={false}>
-        {messages.map((message) => {
+      <ScrollView
+        ref={listRef}
+        contentContainerStyle={styles.messages}
+        showsVerticalScrollIndicator={false}
+        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+      >
+        {messages.map((message, index) => {
           const mine = message.senderId === currentUserId || message.senderId === 'me';
+          const previous = messages[index - 1];
+          const day = new Date(message.createdAt).toDateString();
+          const showDay = !previous || new Date(previous.createdAt).toDateString() !== day;
+          const label =
+            day === new Date().toDateString()
+              ? 'Сегодня'
+              : new Date(message.createdAt).toLocaleDateString('ru', {
+                  day: 'numeric',
+                  month: 'long',
+                });
           return (
-            <View key={message.id} style={[styles.messageRow, mine && styles.messageRowMine]}>
-              <View style={[styles.bubble, mine && styles.bubbleMine]}>
-                <Text style={[styles.messageText, mine && styles.messageTextMine]}>
-                  {message.content}
-                </Text>
-                <Text style={[styles.time, mine && styles.timeMine]}>
-                  {new Date(message.createdAt).toLocaleTimeString('ru', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                  {mine ? '  ✓' : ''}
-                </Text>
+            <View key={message.id}>
+              {showDay && (
+                <View style={styles.dateBanner}>
+                  <Text style={styles.dateText}>{label}</Text>
+                </View>
+              )}
+              <View style={[styles.messageRow, mine && styles.messageRowMine]}>
+                <View style={[styles.bubble, mine && styles.bubbleMine]}>
+                  <Text style={[styles.messageText, mine && styles.messageTextMine]}>
+                    {message.content}
+                  </Text>
+                  <Text style={[styles.time, mine && styles.timeMine]}>
+                    {new Date(message.createdAt).toLocaleTimeString('ru', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                    {mine ? '  ✓' : ''}
+                  </Text>
+                </View>
               </View>
             </View>
           );

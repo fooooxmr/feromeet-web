@@ -49,18 +49,13 @@ export class FeromeetChatSocket {
   async connect() {
     this.callbacks.onState?.('connecting');
     try {
-      const wsBase = process.env.EXPO_PUBLIC_WS_URL?.replace(/\/$/, '');
-      if (!wsBase && typeof window !== 'undefined') {
-        const error = new Error('Realtime chat is unavailable in the browser');
-        this.callbacks.onState?.('error');
-        this.callbacks.onError?.(error);
-        return;
-      }
+      const wsBase =
+        process.env.EXPO_PUBLIC_WS_URL?.replace(/\/$/, '') || 'wss://feromeet.com/ws-chat';
       const info = await apiRequest<{ entropy?: number }>('/ws-chat/info');
       const serverId = String(
         Math.abs((info.entropy || Date.now()) % 1000),
       ).padStart(3, '0');
-      const url = `${wsBase || 'wss://feromeet.com/ws-chat'}/${serverId}/${sessionId()}/websocket`;
+      const url = `${wsBase}/${serverId}/${sessionId()}/websocket`;
       this.socket = new WebSocket(url);
       this.socket.onmessage = ({ data }) => this.handleSockJs(String(data));
       this.socket.onerror = () => {

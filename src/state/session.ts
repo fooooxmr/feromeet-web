@@ -5,6 +5,7 @@ import { configureTokenStorage } from '../api/client';
 import type { AuthTokens } from '../domain/models';
 
 const STORAGE_KEY = 'feromeet.session';
+const DEMO_KEY = 'feromeet.demo';
 
 interface SessionState {
   accessToken?: string;
@@ -47,7 +48,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   demoMode: false,
 
   setPhoneNumber: (phoneNumber) => set({ phoneNumber }),
-  enterDemo: () => set({ demoMode: true, isAuthenticated: true }),
+  enterDemo: () => {
+    if (Platform.OS === 'web' && typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(DEMO_KEY, '1');
+    }
+    set({ demoMode: true, isAuthenticated: true, hydrated: true });
+  },
 
   setTokens: async (tokens) => {
     if (tokens) {
@@ -71,6 +77,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   hydrate: async () => {
     try {
+      if (Platform.OS === 'web' && typeof sessionStorage !== 'undefined' && sessionStorage.getItem(DEMO_KEY) === '1') {
+        set({ demoMode: true, isAuthenticated: true, hydrated: true });
+        return;
+      }
       const raw = await readStorage();
       if (!raw) return;
       const tokens = JSON.parse(raw) as AuthTokens;
@@ -85,6 +95,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   signOut: async () => {
+    if (Platform.OS === 'web' && typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem(DEMO_KEY);
+    }
     await get().setTokens(undefined);
     set({ phoneNumber: undefined, demoMode: false });
   },

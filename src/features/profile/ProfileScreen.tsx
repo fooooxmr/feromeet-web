@@ -52,6 +52,7 @@ export function ProfileScreen({ editing = false }: { editing?: boolean }) {
   const [photoUri, setPhotoUri] = useState<string>();
   const signOut = useSessionStore((state) => state.signOut);
   const demoMode = useSessionStore((state) => state.demoMode);
+  const hydrated = useSessionStore((state) => state.hydrated);
   const [loading, setLoading] = useState(!demoMode);
 
   useEffect(() => {
@@ -63,6 +64,7 @@ export function ProfileScreen({ editing = false }: { editing?: boolean }) {
       setAbout(demoMe.textAbout ?? '');
       return;
     }
+    if (!hydrated) return;
     let active = true;
     setLoading(true);
     profileApi.getMyProfile()
@@ -85,7 +87,7 @@ export function ProfileScreen({ editing = false }: { editing?: boolean }) {
     return () => {
       active = false;
     };
-  }, [demoMode]);
+  }, [demoMode, hydrated]);
 
   const saveProfile = async () => {
     setSaving(true);

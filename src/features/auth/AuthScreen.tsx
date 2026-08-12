@@ -9,11 +9,16 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { BrandMark, Button, Field } from '../../components/ui';
+import { BrandMark, Button } from '../../components/ui';
 import { colors, radius, shadow, spacing } from '../../theme/tokens';
 import { authApi } from '../../api/endpoints';
 import { ApiError } from '../../api/client';
-import { needsProfile, normalizePhone } from '../../domain/models';
+import {
+  belarusLocalDigits,
+  formatBelarusPhoneMask,
+  needsProfile,
+  normalizePhone,
+} from '../../domain/models';
 import { useSessionStore } from '../../state/session';
 
 export function PhoneScreen() {
@@ -24,8 +29,7 @@ export function PhoneScreen() {
   const [error, setError] = useState('');
   const setPhoneNumber = useSessionStore((state) => state.setPhoneNumber);
   const enterDemo = useSessionStore((state) => state.enterDemo);
-  const digits = phone.replace(/\D/g, '');
-  const valid = digits.length >= 10;
+  const valid = belarusLocalDigits(phone).length === 9;
 
   const requestCode = async (overrideMode?: 'login' | 'registration') => {
     const current = overrideMode ?? mode;
@@ -78,14 +82,25 @@ export function PhoneScreen() {
           <Text style={[styles.modeText, mode === 'registration' && styles.modeTextActive]}>Создать аккаунт</Text>
         </Pressable>
       </View>
-      <Field
-        label="Номер телефона"
-        autoComplete="tel"
-        keyboardType="phone-pad"
-        placeholder="+375 29 000-00-00"
-        value={phone}
-        onChangeText={setPhone}
-      />
+      <View style={styles.fieldWrap}>
+        <Text style={styles.fieldLabel}>Номер телефона</Text>
+        <View style={styles.phoneRow}>
+          <View style={styles.prefixBox}>
+            <Text style={styles.prefixText}>+375</Text>
+          </View>
+          <TextInput
+            accessibilityLabel="Номер телефона"
+            autoComplete="tel"
+            keyboardType="phone-pad"
+            placeholder="29 000 00 00"
+            placeholderTextColor={colors.muted}
+            value={formatBelarusPhoneMask(phone)}
+            onChangeText={(value) => setPhone(belarusLocalDigits(value))}
+            maxLength={12}
+            style={styles.phoneInput}
+          />
+        </View>
+      </View>
       <Button
         disabled={!valid || busy}
         label={busy ? 'Отправляем…' : 'Получить код'}
@@ -222,6 +237,32 @@ const styles = StyleSheet.create({
   title: { color: colors.ink, fontWeight: '900', fontSize: 30, letterSpacing: -0.7 },
   subtitle: { color: colors.muted, lineHeight: 22 },
   form: { gap: spacing.md },
+  fieldWrap: { gap: 7 },
+  fieldLabel: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+  phoneRow: { flexDirection: 'row', gap: 8 },
+  prefixBox: {
+    minHeight: 50,
+    paddingHorizontal: 14,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.soft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  prefixText: { color: colors.ink, fontSize: 16, fontWeight: '800' },
+  phoneInput: {
+    flex: 1,
+    minHeight: 50,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: colors.line,
+    color: colors.ink,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    letterSpacing: 0.6,
+  },
   modeRow: { flexDirection: 'row', borderRadius: radius.pill, backgroundColor: colors.soft, padding: 4 },
   modeButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 8, borderRadius: radius.pill, alignItems: 'center' },
   modeButtonActive: { backgroundColor: colors.surface, ...shadow },

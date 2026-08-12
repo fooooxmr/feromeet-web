@@ -6,6 +6,7 @@ import { formatTagLabel } from '../../domain/tags';
 import { meets } from '../demo/fixtures';
 import { Avatar, Button, Card, Chip, Page, ScreenState } from '../../components/ui';
 import { colors, fontFamily, spacing } from '../../theme/tokens';
+import { useIsDesktop } from '../../theme/layout';
 import { meetsApi } from '../../api/endpoints';
 import { useSessionStore } from '../../state/session';
 
@@ -156,7 +157,9 @@ export function MeetDetail({ meet }: { meet: Meet }) {
 }
 
 export function MeetsScreen() {
+  const desktop = useIsDesktop();
   const demoMode = useSessionStore((state) => state.demoMode);
+  const hydrated = useSessionStore((state) => state.hydrated);
   const [tab, setTab] = useState<'active' | 'passed'>('active');
   const [availableMeets, setAvailableMeets] = useState<Meet[]>(demoMode ? meets : []);
   const [loading, setLoading] = useState(!demoMode);
@@ -164,7 +167,7 @@ export function MeetsScreen() {
   const filtered = availableMeets.filter((meet) => (tab === 'active' ? meet.status !== 'PASSED' : meet.status === 'PASSED'));
 
   useEffect(() => {
-    if (demoMode) return;
+    if (!hydrated || demoMode) return;
     let active = true;
     setLoading(true);
     Promise.all([meetsApi.getActive(), meetsApi.getPassed()])
@@ -185,7 +188,7 @@ export function MeetsScreen() {
     return () => {
       active = false;
     };
-  }, [demoMode]);
+  }, [demoMode, hydrated]);
 
   return (
     <Page
@@ -208,8 +211,12 @@ export function MeetsScreen() {
           message="Приглашения и подтверждённые свидания появятся здесь."
         />
       ) : (
-        <View style={styles.mobileCards}>
-          {filtered.map((meet) => <MeetDetail key={meet.meetId} meet={meet} />)}
+        <View style={[styles.mobileCards, desktop && styles.desktopGrid]}>
+          {filtered.map((meet) => (
+            <View key={meet.meetId} style={desktop ? styles.desktopCard : undefined}>
+              <MeetDetail meet={meet} />
+            </View>
+          ))}
         </View>
       )}
     </Page>
@@ -247,5 +254,7 @@ const styles = StyleSheet.create({
   stageMeta: { color: colors.muted, fontSize: 12, marginTop: 4, fontFamily },
   detailActions: { flexDirection: 'column', gap: spacing.sm, marginTop: spacing.md },
   mobileCards: { gap: spacing.md },
+  desktopGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  desktopCard: { width: '48%', minWidth: 320, flexGrow: 1 },
   feedback: { color: colors.green, fontSize: 12, fontWeight: '700', marginTop: spacing.sm, fontFamily },
 });

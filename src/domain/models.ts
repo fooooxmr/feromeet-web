@@ -152,13 +152,33 @@ export function needsProfile(status?: string) {
   );
 }
 
+export function belarusLocalDigits(raw: string) {
+  let digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('375')) digits = digits.slice(3);
+  else if (digits.startsWith('80') && digits.length >= 11) digits = digits.slice(2);
+  return digits.slice(0, 9);
+}
+
+export function formatBelarusPhoneMask(raw: string) {
+  const digits = belarusLocalDigits(raw);
+  return [digits.slice(0, 2), digits.slice(2, 5), digits.slice(5, 7), digits.slice(7, 9)]
+    .filter(Boolean)
+    .join(' ');
+}
+
 export function normalizePhone(raw: string) {
-  const digits = raw.replace(/\D/g, '');
-  if (!digits) return '';
-  if (digits.startsWith('375')) return `+${digits}`;
-  if (digits.length === 11 && digits.startsWith('80')) return `+375${digits.slice(2)}`;
-  if (digits.length === 9) return `+375${digits}`;
-  return `+${digits}`;
+  const local = belarusLocalDigits(raw);
+  return local ? `+375${local}` : '';
+}
+
+export function matchesSearchPreference(user: FeromeetUser, preference: SearchPreference) {
+  const age = ageFromBirthday(user.birthday);
+  if (age != null && (age < preference.ageMin || age > preference.ageMax)) return false;
+  if (preference.sex && preference.sex !== 'ANY') {
+    const gender = (user.gender || '').toUpperCase();
+    if (gender && gender !== preference.sex.toUpperCase()) return false;
+  }
+  return true;
 }
 
 export function unwrapList<T>(payload: unknown): T[] {
@@ -238,6 +258,30 @@ export function normalizeMeet(raw: Meet | Record<string, unknown>): Meet {
 
 export function normalizeMeets(payload: unknown): Meet[] {
   return unwrapList<Meet>(payload).map((item) => normalizeMeet(item));
+}
+
+export function normalizeChatMessage(raw: unknown): ChatMessage | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const record = raw as Record<string, unknown>;
+  const content = String(record.content ?? record.text ?? record.message ?? '');
+  const id = String(record.id ?? '');
+  if (!id && !content) return undefined;
+  return {
+    id: id || `msg-${record.createdAt ?? Date.now()}`,
+    senderId: String(record.senderId ?? record.fromUserId ?? record.from ?? ''),
+    recipientId: String(record.recipientId ?? record.toUserId ?? record.to ?? ''),
+    content,
+    chatId: String(record.chatId ?? ''),
+    createdAt: String(record.createdAt ?? record.timestamp ?? new Date().toISOString()),
+    status: record.status ? String(record.status) : undefined,
+  };
+}
+
+export function normalizeChatMessages(payload: unknown): ChatMessage[] {
+  return unwrapList(payload)
+    .map(normalizeChatMessage)
+    .filter((item): item is ChatMessage => Boolean(item))
+    .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt));
 }
 
 export function unwrapReactions(payload: unknown): ReactionUser[] {

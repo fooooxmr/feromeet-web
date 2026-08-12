@@ -1,9 +1,10 @@
 import type { PropsWithChildren, ReactNode } from 'react';
-import { useState } from 'react';
+import { createElement, forwardRef, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,22 +15,25 @@ import {
 } from 'react-native';
 import { formatTag, type TagView } from '../domain/tags';
 import { colors, fontFamily, gradient, radius, shadow, spacing, type } from '../theme/tokens';
+import { useIsDesktop } from '../theme/layout';
 
 export { BrandMark, HeartMark } from './Logo';
 
-export function Button({
-  label,
-  onPress,
-  variant = 'primary',
-  disabled,
-}: {
+export const Button = forwardRef<View, {
   label: string;
   onPress?: () => void;
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
   disabled?: boolean;
-}) {
+}>(function Button({
+  label,
+  onPress,
+  variant = 'primary',
+  disabled,
+  ...rest
+}, ref) {
   return (
     <Pressable
+      ref={ref}
       accessibilityRole="button"
       disabled={disabled}
       onPress={onPress}
@@ -38,13 +42,14 @@ export function Button({
         variant === 'primary' ? gradient : styles[`button_${variant}`],
         (pressed || disabled) && styles.buttonDimmed,
       ]}
+      {...rest}
     >
       <Text style={[styles.buttonText, variant !== 'primary' && styles.buttonTextDark]}>
         {label}
       </Text>
     </Pressable>
   );
-}
+});
 
 export function Field({
   label,
@@ -58,6 +63,80 @@ export function Field({
         style={[styles.field, props.multiline && styles.fieldMultiline]}
         {...props}
       />
+    </View>
+  );
+}
+
+export function SliderField({
+  label,
+  value,
+  min,
+  max,
+  suffix,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  suffix?: string;
+  onChange: (next: number) => void;
+}) {
+  const track = useRef<View>(null);
+  const [width, setWidth] = useState(1);
+  const ratio = Math.max(0, Math.min(1, (value - min) / Math.max(1, max - min)));
+
+  const updateFromPageX = (pageX: number) => {
+    track.current?.measure((_x, _y, measuredWidth, _h, left) => {
+      const span = measuredWidth || width;
+      const nextRatio = Math.max(0, Math.min(1, (pageX - left) / span));
+      onChange(Math.round(min + nextRatio * (max - min)));
+    });
+  };
+
+  return (
+    <View style={styles.fieldWrap}>
+      <View style={styles.sliderHeader}>
+        <Text style={styles.fieldLabel}>{label}</Text>
+        <Text style={styles.sliderValue}>
+          {value}
+          {suffix ?? ''}
+        </Text>
+      </View>
+      {Platform.OS === 'web'
+        ? createElement('input', {
+            type: 'range',
+            min,
+            max,
+            value,
+            'aria-label': label,
+            onChange: (event: { target: { value: string } }) => onChange(Number(event.target.value)),
+            style: {
+              width: '100%',
+              accentColor: colors.berry,
+              height: 28,
+              cursor: 'pointer',
+            },
+          })
+        : (
+          <View
+            ref={track}
+            accessibilityRole="adjustable"
+            accessibilityLabel={label}
+            accessibilityValue={{ min, max, now: value }}
+            onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+            onStartShouldSetResponder={() => true}
+            onMoveShouldSetResponder={() => true}
+            onResponderGrant={(event) => updateFromPageX(event.nativeEvent.pageX)}
+            onResponderMove={(event) => updateFromPageX(event.nativeEvent.pageX)}
+            style={styles.sliderHit}
+          >
+            <View style={styles.sliderTrack}>
+              <View style={[styles.sliderFill, { width: `${ratio * 100}%` }]} />
+            </View>
+            <View style={[styles.sliderThumb, { left: `${ratio * 100}%` }]} />
+          </View>
+        )}
     </View>
   );
 }
@@ -173,9 +252,10 @@ export function Page({
   subtitle?: string;
   action?: ReactNode;
 }>) {
+  const desktop = useIsDesktop();
   return (
     <ScrollView
-      contentContainerStyle={styles.page}
+      contentContainerStyle={[styles.page, desktop && styles.pageDesktop]}
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.pageHeader}>
@@ -276,6 +356,20 @@ const styles = StyleSheet.create({
     fontFamily,
   },
   fieldMultiline: { minHeight: 104, paddingTop: 14, textAlignVertical: 'top' },
+  sliderHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sliderValue: { color: colors.berry, fontSize: 13, fontWeight: '700', fontFamily },
+  sliderHit: { height: 28, justifyContent: 'center' },
+  sliderTrack: { height: 4, borderRadius: 2, backgroundColor: colors.line, overflow: 'hidden' },
+  sliderFill: { height: 4, backgroundColor: colors.berry },
+  sliderThumb: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    marginLeft: -10,
+    borderRadius: 10,
+    backgroundColor: colors.berry,
+    top: 4,
+  },
   chip: {
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -301,6 +395,7 @@ const styles = StyleSheet.create({
   photoWrap: { overflow: 'hidden', backgroundColor: '#1A1714' },
   photoLoader: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
   page: { width: '100%', padding: spacing.lg, gap: spacing.lg, paddingBottom: 28 },
+  pageDesktop: { maxWidth: 980, alignSelf: 'center', paddingHorizontal: 28, paddingTop: 24 },
   pageHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',

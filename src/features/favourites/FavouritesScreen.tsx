@@ -12,6 +12,7 @@ import { colors, radius, spacing } from '../../theme/tokens';
 export function FavouritesScreen() {
   const router = useRouter();
   const demoMode = useSessionStore((state) => state.demoMode);
+  const hydrated = useSessionStore((state) => state.hydrated);
   const [tab, setTab] = useState<'LIKE' | 'FAVORITE'>('FAVORITE');
   const [items, setItems] = useState<ReactionUser[]>(
     demoMode ? people.map((person) => ({ ...person, reactionType: person.isFavorite ? 'FAVORITE' : 'LIKE' })) : [],
@@ -25,7 +26,7 @@ export function FavouritesScreen() {
   );
 
   useEffect(() => {
-    if (demoMode) return;
+    if (!hydrated || demoMode) return;
     setLoading(true);
     discoveryApi
       .getFavorites()
@@ -37,7 +38,7 @@ export function FavouritesScreen() {
         setError(requestError instanceof ApiError ? requestError.message : 'Не удалось загрузить симпатии');
       })
       .finally(() => setLoading(false));
-  }, [demoMode]);
+  }, [demoMode, hydrated]);
 
   return (
     <Page title="Симпатии" subtitle="Лайки и избранное в одном месте.">

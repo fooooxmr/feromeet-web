@@ -25,8 +25,13 @@ function corsHeaders(origin: string | null) {
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
+  const defaults = ['https://fooooxmr.github.io'];
   const local = origin?.startsWith('http://localhost:') || origin?.startsWith('http://127.0.0.1:');
-  const allowed = !origin || local || configured.includes(origin);
+  const allowed =
+    !origin ||
+    Boolean(local) ||
+    defaults.includes(origin) ||
+    configured.includes(origin);
 
   return {
     allowed,
