@@ -15,6 +15,19 @@ let readTokens: TokenReader = () => ({});
 let writeTokens: TokenWriter = () => undefined;
 let refreshPromise: Promise<string | undefined> | undefined;
 
+const AUTH_ERRORS: Record<string, string> = {
+  ERROR_USER_NOT_REGISTERED: 'Аккаунт не найден. Проверьте номер или создайте аккаунт.',
+  ERROR_USER_ALREADY_REGISTERED: 'Этот номер уже зарегистрирован. Войдите в аккаунт.',
+  ERROR_RESEND_REQUESTED_BEFORE_60_SEC: 'Код уже отправлен. Новый можно запросить через 60 секунд.',
+  ERROR_INVALID_SMS_CODE: 'Неверный код. Проверьте цифры и повторите.',
+  ERROR_SMS_CODE_EXPIRED: 'Код устарел. Запросите новый.',
+};
+
+function errorMessage(body: ApiErrorBody | undefined, status: number) {
+  const mapped = body?.errorCode ? AUTH_ERRORS[body.errorCode] : undefined;
+  return mapped || body?.message || body?.error || `Request failed (${status})`;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -42,11 +55,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
 
   if (!response.ok) {
     const errorBody = body as ApiErrorBody | undefined;
-    throw new ApiError(
-      errorBody?.message || errorBody?.error || `Request failed (${response.status})`,
-      response.status,
-      errorBody,
-    );
+    throw new ApiError(errorMessage(errorBody, response.status), response.status, errorBody);
   }
 
   return body as T;

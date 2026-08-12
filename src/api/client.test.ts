@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiRequest, configureTokenStorage, queryString, API_BASE_URL } from './client';
+import { normalizePhone } from '../domain/models';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -11,6 +12,14 @@ describe('queryString', () => {
     expect(queryString({ userId: 'a b', page: 2, empty: undefined })).toBe(
       '?userId=a+b&page=2',
     );
+  });
+});
+
+describe('normalizePhone', () => {
+  it('sends E.164 like the Android client', () => {
+    expect(normalizePhone('+375 29 123-45-67')).toBe('+375291234567');
+    expect(normalizePhone('80291234567')).toBe('+375291234567');
+    expect(normalizePhone('291234567')).toBe('+375291234567');
   });
 });
 
@@ -59,6 +68,23 @@ describe('apiRequest', () => {
       name: 'ApiError',
       status: 400,
       message: 'Invalid code',
+    });
+  });
+
+  it('maps Feromeet errorCode to a readable message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ errorCode: 'ERROR_USER_NOT_REGISTERED' }), {
+          status: 400,
+        }),
+      ),
+    );
+
+    await expect(apiRequest('/test', { auth: false })).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 400,
+      message: 'Аккаунт не найден. Проверьте номер или создайте аккаунт.',
     });
   });
 });

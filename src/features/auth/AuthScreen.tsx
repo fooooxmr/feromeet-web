@@ -13,7 +13,7 @@ import { BrandMark, Button, Field } from '../../components/ui';
 import { colors, radius, shadow, spacing } from '../../theme/tokens';
 import { authApi } from '../../api/endpoints';
 import { ApiError } from '../../api/client';
-import { needsProfile } from '../../domain/models';
+import { needsProfile, normalizePhone } from '../../domain/models';
 import { useSessionStore } from '../../state/session';
 
 export function PhoneScreen() {
@@ -27,14 +27,28 @@ export function PhoneScreen() {
   const digits = phone.replace(/\D/g, '');
   const valid = digits.length >= 10;
 
-  const requestCode = async () => {
+  const requestCode = async (overrideMode?: 'login' | 'registration') => {
+    const current = overrideMode ?? mode;
+    const normalized = normalizePhone(phone);
     setBusy(true);
     setError('');
-    setPhoneNumber(phone);
+    setPhoneNumber(normalized);
     try {
-      await authApi.requestSms(phone, mode);
-      router.push({ pathname: '/otp', params: { phone, mode } });
+      await authApi.requestSms(normalized, current);
+      setMode(current);
+      router.push({ pathname: '/otp', params: { phone: normalized, mode: current } });
     } catch (requestError) {
+      const code = requestError instanceof ApiError ? requestError.body?.errorCode : undefined;
+      if (!overrideMode && code === 'ERROR_USER_NOT_REGISTERED' && current === 'login') {
+        setMode('registration');
+        await requestCode('registration');
+        return;
+      }
+      if (!overrideMode && code === 'ERROR_USER_ALREADY_REGISTERED' && current === 'registration') {
+        setMode('login');
+        await requestCode('login');
+        return;
+      }
       setError(
         requestError instanceof ApiError
           ? requestError.message

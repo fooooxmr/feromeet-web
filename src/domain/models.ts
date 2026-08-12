@@ -16,6 +16,7 @@ export interface AuthTokens {
 export interface ApiErrorBody {
   message?: string;
   error?: string;
+  errorCode?: string;
   status?: number;
   timestamp?: string;
 }
@@ -149,6 +150,15 @@ export function needsProfile(status?: string) {
     status === 'REGISTERED_PHONE_VERIFIED' ||
     status === 'NOT_REGISTERED_PHONE_ENTERED'
   );
+}
+
+export function normalizePhone(raw: string) {
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('375')) return `+${digits}`;
+  if (digits.length === 11 && digits.startsWith('80')) return `+375${digits.slice(2)}`;
+  if (digits.length === 9) return `+375${digits}`;
+  return `+${digits}`;
 }
 
 export function unwrapList<T>(payload: unknown): T[] {

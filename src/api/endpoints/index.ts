@@ -8,26 +8,26 @@ import type {
   RateMeetRequest,
   SearchPreference,
 } from '../../domain/models';
-import { unwrapReactions, unwrapList, normalizeMeet, normalizeMeets } from '../../domain/models';
+import { unwrapReactions, unwrapList, normalizeMeet, normalizeMeets, normalizePhone } from '../../domain/models';
 
 const post = <T>(path: string, body?: unknown, auth = true) =>
   apiRequest<T>(path, { method: 'POST', body, auth });
 
 export const authApi = {
   requestSms: (phoneNumber: string, mode: 'login' | 'registration' = 'login') =>
-    post<void>(`/api/auth/${mode}/request-sms`, { phoneNumber }, false),
+    post<void>(`/api/auth/${mode}/request-sms`, { phoneNumber: normalizePhone(phoneNumber) }, false),
 
   loginWithSms: (phoneNumber: string, smsCode: string) =>
     post<AuthTokens>(
       '/api/auth/login/login-with-sms',
-      { phoneNumber, smsCode },
+      { phoneNumber: normalizePhone(phoneNumber), smsCode },
       false,
     ),
 
   registerWithSms: (phoneNumber: string, smsCode: string) =>
     post<AuthTokens>(
       '/api/auth/registration/register-with-sms',
-      { phoneNumber, smsCode },
+      { phoneNumber: normalizePhone(phoneNumber), smsCode },
       false,
     ),
 
