@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Feromeet",
+    "slug": "feromeet-web",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "feromeet",
+    "userInterfaceStyle": "light",
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "name": "Feromeet"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "baseUrl": "/feromeet-web"
+    },
+    "android": {
+      "package": "com.feromeet.web"
+    },
+    "ios": {
+      "bundleIdentifier": "com.feromeet.web",
+      "supportsTablet": true
+    }
+  }
+}
