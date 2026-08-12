@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { photoUrl, type Meet } from '../../domain/models';
 import { formatTagLabel } from '../../domain/tags';
@@ -96,7 +96,12 @@ export function MeetDetail({ meet }: { meet: Meet }) {
   return (
     <Card>
       <View style={styles.personRow}>
-        <Avatar name={meet.user.name} size={52} uri={photoUrl(meet.user.mainSmallPhotoFilename)} />
+        <Pressable
+          accessibilityLabel={meet.user.name}
+          onPress={() => meet.user?.id && router.push(`/profile/${meet.user.id}`)}
+        >
+          <Avatar name={meet.user.name} size={52} uri={photoUrl(meet.user.mainSmallPhotoFilename)} />
+        </Pressable>
         <View style={styles.personCopy}>
           <Text style={styles.personName} numberOfLines={1}>{meet.user.name}</Text>
           <Text style={styles.personMeta} numberOfLines={1}>
@@ -200,7 +205,7 @@ export function MeetsScreen() {
         </View>
       }
     >
-      {loading ? (
+      {loading || !hydrated ? (
         <ScreenState kind="loading" title="Загружаем встречи" message="Это займёт секунду" />
       ) : error ? (
         <ScreenState kind="error" title="Ошибка" message={error} />

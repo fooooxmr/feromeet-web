@@ -13,17 +13,31 @@ export default function MeetRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const demoMode = useSessionStore((state) => state.demoMode);
+  const hydrated = useSessionStore((state) => state.hydrated);
   const [meet, setMeet] = useState<Meet | undefined>(() =>
     demoMode ? meets.find((item) => String(item.meetId) === id) : undefined,
   );
+  const [loading, setLoading] = useState(!demoMode);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (demoMode) return;
+    if (demoMode) {
+      setMeet(meets.find((item) => String(item.meetId) === id));
+      setLoading(false);
+      return;
+    }
+    if (!hydrated) return;
     const meetId = Number(id);
-    if (!Number.isFinite(meetId)) return;
+    if (!Number.isFinite(meetId)) {
+      setMeet(undefined);
+      setLoading(false);
+      return;
+    }
     let active = true;
-    meetsApi.getById(meetId)
+    setLoading(true);
+    setError('');
+    meetsApi
+      .getById(meetId)
       .then((value) => {
         if (active) {
           setMeet(value);
@@ -31,12 +45,22 @@ export default function MeetRoute() {
         }
       })
       .catch(() => {
-        if (active) setError('Не удалось загрузить встречу');
+        if (active) {
+          setMeet(undefined);
+          setError('Не удалось загрузить встречу');
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
     return () => {
       active = false;
     };
-  }, [demoMode, id]);
+  }, [demoMode, hydrated, id]);
+
+  if (loading || !hydrated) {
+    return <ScreenState kind="loading" title="Загружаем встречу" message="Это займёт секунду" />;
+  }
 
   if (!meet) {
     return (

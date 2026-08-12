@@ -260,29 +260,39 @@ function lineTitle(name?: string) {
 }
 
 export function normalizeMeet(raw: Meet | Record<string, unknown>): Meet {
+  const record = raw as Record<string, unknown>;
   const stages = ((raw as Meet).stages ?? []).map((stage, index) => {
-    const record = stage as MeetStage & {
+    const item = stage as MeetStage & {
       name?: string;
       isOpen?: boolean;
       lines?: Array<{ name?: string; createdAt?: string; isCurrent?: boolean }>;
     };
-    const name = record.name || record.type;
-    const status = (record.status || '').toUpperCase();
-    const lines = record.lines ?? [];
+    const name = item.name || item.type;
+    const status = (item.status || '').toUpperCase();
+    const lines = item.lines ?? [];
     const current = lines.find((line) => line.isCurrent) ?? lines.at(-1);
     return {
       type: name,
       status,
-      title: record.title || stageTitle(name, index),
+      title: item.title || stageTitle(name, index),
       subtitle:
-        record.subtitle ||
+        item.subtitle ||
         lineTitle(current?.name) ||
         (status === 'DONE' ? 'Готово' : status === 'CURRENT' ? 'Сейчас' : 'Скоро'),
-      dateTime: record.dateTime || current?.createdAt,
-      completed: record.completed ?? status === 'DONE',
+      dateTime: item.dateTime || current?.createdAt,
+      completed: item.completed ?? status === 'DONE',
     };
   });
-  return { ...(raw as Meet), stages };
+  const meetIdValue = record.meetId ?? record.id;
+  const meetId = typeof meetIdValue === 'number' ? meetIdValue : Number(meetIdValue);
+  const user = (record.user ?? record.otherUser ?? record.partner) as Meet['user'];
+  return {
+    ...(raw as Meet),
+    stages,
+    chatId: scalarId(record.chatId ?? record.chat) || (raw as Meet).chatId,
+    meetId: Number.isFinite(meetId) ? meetId : (raw as Meet).meetId,
+    user: user || (raw as Meet).user,
+  };
 }
 
 export function normalizeMeets(payload: unknown): Meet[] {

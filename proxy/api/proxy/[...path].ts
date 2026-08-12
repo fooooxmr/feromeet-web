@@ -105,7 +105,15 @@ export default async function handler(
   }
 
   const rawPath = request.query.upstream ?? request.query.path;
-  const path = Array.isArray(rawPath) ? rawPath.join('/') : rawPath ?? '';
+  let path = Array.isArray(rawPath) ? rawPath.join('/') : String(rawPath ?? '');
+  if (!path || path === 'bridge') {
+    const pathname = new URL(request.url || '/', 'http://localhost').pathname.replace(
+      /^\/api\/proxy\/?/,
+      '',
+    );
+    path = pathname && pathname !== 'bridge' ? pathname : '';
+  }
+  path = path.replace(/^\/+/, '');
 
   if (!routes.some((route) => route.test(path))) {
     response.status(404).send('Route is not allowed');
@@ -127,6 +135,8 @@ export default async function handler(
 
   try {
     const requestUrl = new URL(request.url || '/', `https://${request.headers.host}`);
+    requestUrl.searchParams.delete('upstream');
+    requestUrl.searchParams.delete('path');
     const body =
       request.method === 'GET' || request.method === 'DELETE'
         ? undefined

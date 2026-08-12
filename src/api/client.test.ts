@@ -100,11 +100,11 @@ describe('apiRequest', () => {
     });
   });
 
-  it('retries 403 after refreshing the access token', async () => {
+  it('retries 401 after refreshing the access token', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ message: 'Forbidden' }), { status: 403 }),
+        new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }),
       )
       .mockResolvedValueOnce(
         new Response(
@@ -130,6 +130,61 @@ describe('apiRequest', () => {
 
     await expect(apiRequest<{ ok: boolean }>('/users')).resolves.toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not refresh or clear tokens on a 403', async () => {
+    const writer = vi.fn();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('Origin is not allowed', { status: 403 })),
+    );
+    configureTokenStorage(
+      () => ({ accessToken: 'access', refreshToken: 'refresh' }),
+      writer,
+    );
+
+    await expect(apiRequest('/users')).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 403,
+      message: 'Не удалось загрузить данные. Попробуйте ещё раз.',
+    });
+    expect(writer).not.toHaveBeenCalled();
+  });
+
+  it('keeps the session when token refresh fails with 403', async () => {
+    const writer = vi.fn();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }))
+      .mockResolvedValueOnce(new Response('Origin is not allowed', { status: 403 }));
+    vi.stubGlobal('fetch', fetchMock);
+    configureTokenStorage(
+      () => ({ accessToken: 'stale', refreshToken: 'refresh' }),
+      writer,
+    );
+
+    await expect(apiRequest('/users')).rejects.toMatchObject({ status: 401 });
+    expect(writer).not.toHaveBeenCalled();
+  });
+
+  it('clears tokens only when refresh returns a 401 auth error body', async () => {
+    const writer = vi.fn();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: 'Unauthorized' }), { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ errorCode: 'ERROR_INVALID_SMS_CODE', message: 'bad' }), {
+          status: 401,
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    configureTokenStorage(
+      () => ({ accessToken: 'stale', refreshToken: 'refresh' }),
+      writer,
+    );
+
+    await expect(apiRequest('/users')).rejects.toMatchObject({ status: 401 });
+    expect(writer).toHaveBeenCalledWith(undefined);
   });
 });
 

@@ -158,7 +158,7 @@ export function ProfileScreen({ editing = false }: { editing?: boolean }) {
     }
   };
 
-  if (loading) {
+  if (loading || !hydrated) {
     return <ScreenState kind="loading" title="Загружаем профиль" message="Это займёт секунду" />;
   }
 

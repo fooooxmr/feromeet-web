@@ -434,7 +434,7 @@ export function DiscoveryScreen() {
           dragX.setValue(gesture.dx);
         },
         onPanResponderRelease: (_, gesture) => {
-          if (!desktop && gesture.dy > 90 && Math.abs(gesture.dy) > Math.abs(gesture.dx)) {
+          if (!desktop && gesture.dy < -90 && Math.abs(gesture.dy) > Math.abs(gesture.dx)) {
             Animated.spring(dragX, { toValue: 0, useNativeDriver: false }).start();
             setProfileOpen(true);
             return;
@@ -528,7 +528,7 @@ export function DiscoveryScreen() {
           {card}
           {dock}
           <Pressable onPress={() => setProfileOpen(true)} style={styles.pullHint}>
-            <Text style={styles.pullHintText}>Свайп вниз — профиль</Text>
+            <Text style={styles.pullHintText}>Свайп вверх — профиль</Text>
           </Pressable>
         </View>
       )}

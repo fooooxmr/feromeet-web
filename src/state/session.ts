@@ -82,14 +82,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         return;
       }
       const raw = await readStorage();
-      if (!raw) return;
-      const tokens = JSON.parse(raw) as AuthTokens;
-      if (tokens.accessToken && tokens.refreshToken) {
-        set({ ...tokens, isAuthenticated: true });
+      if (raw) {
+        const tokens = JSON.parse(raw) as AuthTokens;
+        if (tokens.accessToken && tokens.refreshToken) {
+          set({ ...tokens, demoMode: false, isAuthenticated: true, hydrated: true });
+          return;
+        }
       }
+      set({ hydrated: true });
     } catch {
-      await writeStorage();
-    } finally {
       set({ hydrated: true });
     }
   },

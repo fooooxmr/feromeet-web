@@ -48,6 +48,7 @@ export function ChatScreen() {
   const [recipientId, setRecipientId] = useState(demoMode ? 'lena' : '');
   const [peerName, setPeerName] = useState(demoMode ? 'Лена' : 'Собеседник');
   const [peerPhoto, setPeerPhoto] = useState<string>();
+  const [peerUserId, setPeerUserId] = useState(demoMode ? 'lena' : '');
   const [meetId, setMeetId] = useState<number>();
   const [typing, setTyping] = useState(false);
   const [loading, setLoading] = useState(!demoMode);
@@ -70,51 +71,69 @@ export function ChatScreen() {
         active = false;
       };
     }
+    if (!accessToken) return;
 
     setLoading(true);
     setHistoryError('');
-    void chatApi
-      .getHistory(chatId)
-      .then((history) => {
-        if (!active) return;
-        setMessages(history);
-        setHistoryError('');
-      })
-      .catch((error) => {
-        if (!active) return;
-        setMessages([]);
-        setHistoryError(
-          error instanceof ApiError ? error.message : 'Не удалось загрузить переписку',
-        );
-      })
-      .finally(() => {
-        if (active) setLoading(false);
+
+    const loadHistory = (id: string) =>
+      chatApi.getHistory(id).catch((error) => {
+        const status = error instanceof ApiError ? error.status : 0;
+        if (status === 403 || status === 401) {
+          return new Promise((resolve) => setTimeout(resolve, 400)).then(() =>
+            chatApi.getHistory(id),
+          );
+        }
+        throw error;
       });
 
-    void Promise.all([
-      profileApi.getMyProfile().catch(() => undefined),
-      meetsApi.getActive().catch(() => []),
-      meetsApi.getPassed().catch(() => []),
-    ]).then(([profile, activeMeets, passedMeets]) => {
+    void (async () => {
+      const [profile, activeMeets, passedMeets] = await Promise.all([
+        profileApi.getMyProfile().catch(() => undefined),
+        meetsApi.getActive().catch(() => []),
+        meetsApi.getPassed().catch(() => []),
+      ]);
       if (!active) return;
       const ownId = profileId(profile);
       if (ownId) setCurrentUserId(ownId);
       const meet = [...activeMeets, ...passedMeets].find(
-        (item) => String(item.chatId) === String(chatId),
+        (item) =>
+          String(item.chatId) === String(chatId) || String(item.meetId) === String(chatId),
       );
+      const resolvedChatId = meet?.chatId || chatId;
       if (meet?.user) {
         const user = meet.user as FeromeetUser;
         setPeerName(user.name);
         setMeetId(meet.meetId);
         setRecipientId(String(user.id));
+        setPeerUserId(String(user.id));
         setPeerPhoto(photoUrl(user.mainSmallPhotoFilename || user.mainPhotoFilename));
         void meetsApi.markAsRead(meet.meetId).catch(() => undefined);
       }
-    });
 
-    if (accessToken) {
+      try {
+        const history = await loadHistory(resolvedChatId);
+        if (!active) return;
+        setMessages(history);
+        setHistoryError('');
+      } catch (error) {
+        if (!active) return;
+        setMessages([]);
+        const status = error instanceof ApiError ? error.status : 0;
+        setHistoryError(
+          status === 403 || status === 401
+            ? 'Не удалось загрузить переписку. Попробуйте ещё раз.'
+            : error instanceof ApiError
+              ? error.message
+              : 'Не удалось загрузить переписку',
+        );
+      } finally {
+        if (active) setLoading(false);
+      }
+
+      if (!active || !accessToken) return;
       setSocketState('connecting');
-      const socket = new FeromeetChatSocket(accessToken, chatId, {
+      const socket = new FeromeetChatSocket(accessToken, resolvedChatId, {
         onMessage: (message) => {
           if (!active) return;
           setMessages((current) =>
@@ -142,7 +161,7 @@ export function ChatScreen() {
       });
       socketRef.current = socket;
       void socket.connect();
-    }
+    })();
 
     return () => {
       active = false;
@@ -180,7 +199,13 @@ export function ChatScreen() {
         <Pressable accessibilityLabel="Назад" onPress={() => router.back()} style={styles.back}>
           <Text style={styles.backText}>‹</Text>
         </Pressable>
-        <Avatar name={peerName} size={44} uri={peerPhoto} />
+        <Pressable
+          accessibilityLabel={peerName}
+          disabled={!peerUserId}
+          onPress={() => peerUserId && router.push(`/profile/${peerUserId}`)}
+        >
+          <Avatar name={peerName} size={44} uri={peerPhoto} />
+        </Pressable>
         <View style={styles.headerCopy}>
           <Text style={styles.name}>{peerName}</Text>
           <Text style={socketState === 'connected' ? styles.online : styles.preview}>
@@ -236,20 +261,18 @@ export function ChatScreen() {
             </View>
           );
         })}
-        {loading && (
+        {!hydrated || loading ? (
           <ScreenState kind="loading" title="Загружаем переписку" message="Это займёт секунду" />
-        )}
-        {!loading && historyError ? (
+        ) : historyError ? (
           <ScreenState
             kind="error"
             title="Не удалось загрузить чат"
             message={historyError}
             action={() => setReloadKey((value) => value + 1)}
           />
-        ) : null}
-        {!loading && !historyError && messages.length === 0 && (
+        ) : messages.length === 0 ? (
           <Text style={styles.empty}>Пока нет сообщений. Напишите первым.</Text>
-        )}
+        ) : null}
         {typing && <Text style={styles.typing}>{peerName} печатает…</Text>}
       </ScrollView>
       <View style={styles.composer}>

@@ -46,7 +46,7 @@ export function FavouritesScreen() {
         <Chip label="Лайки" active={tab === 'LIKE'} onPress={() => setTab('LIKE')} />
         <Chip label="Избранное" active={tab === 'FAVORITE'} onPress={() => setTab('FAVORITE')} />
       </View>
-      {loading ? (
+      {loading || !hydrated ? (
         <ScreenState kind="loading" title="Загружаем симпатии" message="Это займёт секунду" />
       ) : error ? (
         <ScreenState kind="error" title="Ошибка" message={error} />

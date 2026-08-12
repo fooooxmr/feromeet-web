@@ -23,9 +23,38 @@ const AUTH_ERRORS: Record<string, string> = {
   ERROR_SMS_CODE_EXPIRED: 'Код устарел. Запросите новый.',
 };
 
-function errorMessage(body: ApiErrorBody | undefined, status: number) {
-  const mapped = body?.errorCode ? AUTH_ERRORS[body.errorCode] : undefined;
-  return mapped || body?.message || body?.error || `Request failed (${status})`;
+const GENERIC_ERRORS = new Set([
+  'Forbidden',
+  'Unauthorized',
+  'Origin is not allowed',
+  'Access Denied',
+  'Access denied',
+]);
+
+function asErrorBody(body: unknown): ApiErrorBody | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined;
+  return body as ApiErrorBody;
+}
+
+function errorMessage(body: unknown, status: number) {
+  const record = asErrorBody(body);
+  const mapped = record?.errorCode ? AUTH_ERRORS[record.errorCode] : undefined;
+  if (mapped) return mapped;
+  const fromBody = record?.message || record?.error;
+  if (fromBody && !GENERIC_ERRORS.has(fromBody) && !/^Request failed/i.test(fromBody)) {
+    return fromBody;
+  }
+  if (status === 401) return 'Не удалось подтвердить сессию. Попробуйте ещё раз.';
+  if (status === 403) return 'Не удалось загрузить данные. Попробуйте ещё раз.';
+  if (status === 0 || status === 502) return 'Сервер временно недоступен. Попробуйте ещё раз.';
+  if (status === 429) return 'Слишком много запросов. Подождите немного.';
+  return `Не удалось выполнить запрос (${status})`;
+}
+
+function isConfirmedInvalidRefresh(status: number, body: unknown): boolean {
+  if (status !== 401) return false;
+  const record = asErrorBody(body);
+  return Boolean(record?.errorCode || record?.message || record?.error);
 }
 
 export class ApiError extends Error {
@@ -74,23 +103,33 @@ async function refreshAccessToken(): Promise<string | undefined> {
   if (!refreshToken) return undefined;
 
   if (!refreshPromise) {
-    refreshPromise = fetch(apiUrl('/api/auth/refresh-access-token'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
-    })
-      .then(parseResponse<AuthTokens>)
-      .then(async (tokens) => {
-        await writeTokens(tokens);
-        return tokens.accessToken;
-      })
-      .catch(async () => {
-        await writeTokens(undefined);
+    refreshPromise = (async () => {
+      try {
+        const response = await fetch(apiUrl('/api/auth/refresh-access-token'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
+        const text = await response.text();
+        const body = text ? safeJson(text) : undefined;
+        if (response.ok) {
+          const tokens = body as AuthTokens;
+          if (tokens?.accessToken) {
+            await writeTokens(tokens);
+            return tokens.accessToken;
+          }
+          return undefined;
+        }
+        if (isConfirmedInvalidRefresh(response.status, body)) {
+          await writeTokens(undefined);
+        }
         return undefined;
-      })
-      .finally(() => {
+      } catch {
+        return undefined;
+      } finally {
         refreshPromise = undefined;
-      });
+      }
+    })();
   }
 
   return refreshPromise;
@@ -132,7 +171,7 @@ export async function apiRequest<T>(
       signal: controller.signal,
     });
 
-    if ((response.status === 401 || response.status === 403) && auth) {
+    if (response.status === 401 && auth) {
       const renewedToken = await refreshAccessToken();
       if (renewedToken) {
         requestHeaders.set('Authorization', `Bearer ${renewedToken}`);

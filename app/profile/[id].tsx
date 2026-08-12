@@ -13,6 +13,7 @@ export default function PublicProfileRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const demoMode = useSessionStore((state) => state.demoMode);
+  const hydrated = useSessionStore((state) => state.hydrated);
   const [profile, setProfile] = useState<FeromeetUser | undefined>(
     demoMode ? people.find((person) => person.id === id) : undefined,
   );
@@ -22,7 +23,11 @@ export default function PublicProfileRoute() {
   const [favorite, setFavorite] = useState(false);
 
   useEffect(() => {
-    if (!id || demoMode) return;
+    if (!id || demoMode) {
+      if (demoMode) setLoading(false);
+      return;
+    }
+    if (!hydrated) return;
     let active = true;
     setLoading(true);
     discoveryApi
@@ -43,9 +48,9 @@ export default function PublicProfileRoute() {
     return () => {
       active = false;
     };
-  }, [demoMode, id]);
+  }, [demoMode, hydrated, id]);
 
-  if (loading) {
+  if (loading || !hydrated) {
     return <ScreenState kind="loading" title="Загружаем профиль" message="Это займёт секунду" />;
   }
 
