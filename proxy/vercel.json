@@ -5,6 +5,12 @@
       "maxDuration": 10
     }
   },
+  "rewrites": [
+    {
+      "source": "/api/proxy/:path*",
+      "destination": "/api/proxy/bridge?upstream=:path*"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",

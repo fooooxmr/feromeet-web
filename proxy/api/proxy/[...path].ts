@@ -1,3 +1,5 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+
 const UPSTREAM = 'https://feromeet.com';
 const MAX_BODY_BYTES = 12 * 1024 * 1024;
 const RATE_WINDOW_MS = 60_000;
@@ -38,10 +40,14 @@ function corsHeaders(origin: string | null) {
   };
 }
 
-function isRateLimited(request: Request): boolean {
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function isRateLimited(request: VercelRequest): boolean {
   const ip =
-    request.headers.get('x-real-ip') ||
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    headerValue(request.headers['x-real-ip']) ||
+    headerValue(request.headers['x-forwarded-for'])?.split(',')[0]?.trim() ||
     'unknown';
   const now = Date.now();
   const bucket = buckets.get(ip);
@@ -53,80 +59,90 @@ function isRateLimited(request: Request): boolean {
   return bucket.count > RATE_LIMIT;
 }
 
-export default async function handler(request: Request): Promise<Response> {
-  const origin = request.headers.get('origin');
+async function readBody(request: VercelRequest): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > MAX_BODY_BYTES) throw new Error('BODY_TOO_LARGE');
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
+export default async function handler(
+  request: VercelRequest,
+  response: VercelResponse,
+): Promise<void> {
+  const origin = headerValue(request.headers.origin) ?? null;
   const cors = corsHeaders(origin);
+  Object.entries(cors.headers).forEach(([key, value]) =>
+    response.setHeader(key, value),
+  );
 
   if (!cors.allowed) {
-    return new Response('Origin is not allowed', { status: 403 });
+    response.status(403).send('Origin is not allowed');
+    return;
   }
   if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: cors.headers });
+    response.status(204).end();
+    return;
   }
-  if (!['GET', 'POST', 'DELETE'].includes(request.method)) {
-    return new Response('Method is not allowed', {
-      status: 405,
-      headers: cors.headers,
-    });
+  if (!request.method || !['GET', 'POST', 'DELETE'].includes(request.method)) {
+    response.status(405).send('Method is not allowed');
+    return;
   }
   if (isRateLimited(request)) {
-    return new Response('Too many requests', {
-      status: 429,
-      headers: { ...cors.headers, 'Retry-After': '60' },
-    });
+    response.setHeader('Retry-After', '60');
+    response.status(429).send('Too many requests');
+    return;
   }
 
-  const url = new URL(request.url);
-  const marker = '/api/proxy/';
-  const markerIndex = url.pathname.indexOf(marker);
-  const path =
-    markerIndex >= 0 ? decodeURIComponent(url.pathname.slice(markerIndex + marker.length)) : '';
+  const rawPath = request.query.upstream ?? request.query.path;
+  const path = Array.isArray(rawPath) ? rawPath.join('/') : rawPath ?? '';
 
   if (!routes.some((route) => route.test(path))) {
-    return new Response('Route is not allowed', {
-      status: 404,
-      headers: cors.headers,
-    });
+    response.status(404).send('Route is not allowed');
+    return;
   }
 
-  const contentLength = Number(request.headers.get('content-length') || 0);
+  const contentLength = Number(headerValue(request.headers['content-length']) || 0);
   if (contentLength > MAX_BODY_BYTES) {
-    return new Response('Request body is too large', {
-      status: 413,
-      headers: cors.headers,
-    });
+    response.status(413).send('Request body is too large');
+    return;
   }
 
   const headers = new Headers();
-  const authorization = request.headers.get('authorization');
-  const contentType = request.headers.get('content-type');
+  const authorization = headerValue(request.headers.authorization);
+  const contentType = headerValue(request.headers['content-type']);
   if (authorization) headers.set('Authorization', authorization);
   if (contentType) headers.set('Content-Type', contentType);
   headers.set('Accept', 'application/json');
 
   try {
-    const upstream = await fetch(`${UPSTREAM}/${path}${url.search}`, {
+    const requestUrl = new URL(request.url || '/', `https://${request.headers.host}`);
+    const body =
+      request.method === 'GET' || request.method === 'DELETE'
+        ? undefined
+        : await readBody(request);
+    const upstream = await fetch(`${UPSTREAM}/${path}${requestUrl.search}`, {
       method: request.method,
       headers,
-      body:
-        request.method === 'GET' || request.method === 'DELETE'
-          ? undefined
-          : await request.arrayBuffer(),
+      body,
       redirect: 'manual',
     });
-    const responseHeaders = new Headers(cors.headers);
     const upstreamType = upstream.headers.get('content-type');
-    if (upstreamType) responseHeaders.set('Content-Type', upstreamType);
-    responseHeaders.set('Cache-Control', 'no-store');
-
-    return new Response(upstream.body, {
-      status: upstream.status,
-      headers: responseHeaders,
+    if (upstreamType) response.setHeader('Content-Type', upstreamType);
+    response.setHeader('Cache-Control', 'no-store');
+    response.status(upstream.status).send(Buffer.from(await upstream.arrayBuffer()));
+  } catch (error) {
+    if (error instanceof Error && error.message === 'BODY_TOO_LARGE') {
+      response.status(413).send('Request body is too large');
+      return;
+    }
+    response.status(502).json({
+      message: 'Feromeet API is temporarily unavailable',
     });
-  } catch {
-    return Response.json(
-      { message: 'Feromeet API is temporarily unavailable' },
-      { status: 502, headers: cors.headers },
-    );
   }
 }
