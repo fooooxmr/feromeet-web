@@ -53,12 +53,18 @@ export interface SearchPreference {
   radius: number;
 }
 
+export type ExpenseType = 'I_PAY' | 'SPLIT' | 'YOU_PAY' | string;
+
 export interface InviteRequest {
   price: number;
   ferotag: string;
-  expenseType: 'HUNTER' | 'VICTIM' | 'HALF' | string;
+  expenseType: ExpenseType;
   comment: string;
   userTo: string;
+}
+
+export interface ReactionUser extends FeromeetUser {
+  reactionType?: 'LIKE' | 'FAVORITE' | string;
 }
 
 export interface MeetStage {
@@ -103,4 +109,21 @@ export const PHOTO_BASE_URL =
 
 export function photoUrl(filename?: string): string | undefined {
   return filename ? `${PHOTO_BASE_URL}${encodeURIComponent(filename)}` : undefined;
+}
+
+export function ageFromBirthday(birthday?: string): number | undefined {
+  if (!birthday) return undefined;
+  const date = new Date(birthday);
+  if (Number.isNaN(date.getTime())) return undefined;
+  const now = new Date();
+  let age = now.getFullYear() - date.getFullYear();
+  const month = now.getMonth() - date.getMonth();
+  if (month < 0 || (month === 0 && now.getDate() < date.getDate())) age -= 1;
+  return age;
+}
+
+export function userPhotos(user: FeromeetUser): string[] {
+  return [user.mainPhotoFilename, ...(user.otherPhotoFilenames ?? [])].filter(
+    (filename): filename is string => Boolean(filename),
+  );
 }

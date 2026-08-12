@@ -44,31 +44,37 @@ export function MeetDetail({ meet }: { meet: Meet }) {
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
 
-  const advance = async () => {
+  const run = async (action: () => Promise<void>, success: string) => {
     setBusy(true);
     setFeedback('');
     try {
-      if (demoMode) {
-        setFeedback('Этап подтверждён в demo');
-        return;
-      }
-      const status = meet.status.toUpperCase();
-      if (status.includes('INVIT')) {
-        await meetsApi.accept(meet.meetId);
-      } else if (status.includes('PLAN') || status.includes('AGREE')) {
-        await (meet.isYouHunter
-          ? meetsApi.consentAsHunter(meet.meetId)
-          : meetsApi.consentAsVictim(meet.meetId));
-      } else {
-        await (meet.isYouHunter
-          ? meetsApi.arriveAsHunter(meet.meetId)
-          : meetsApi.arriveAsVictim(meet.meetId));
-      }
-      setFeedback('Этап подтверждён');
+      if (!demoMode) await action();
+      setFeedback(success);
     } catch {
       setFeedback('Действие пока недоступно');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const advance = async () => {
+    const status = meet.status.toUpperCase();
+    if (status.includes('INVIT')) {
+      await run(() => meetsApi.accept(meet.meetId), 'Приглашение принято');
+    } else if (status.includes('PLAN') || status.includes('AGREE')) {
+      await run(
+        () => meet.isYouHunter
+          ? meetsApi.consentAsHunter(meet.meetId)
+          : meetsApi.consentAsVictim(meet.meetId),
+        'Детали подтверждены',
+      );
+    } else {
+      await run(
+        () => meet.isYouHunter
+          ? meetsApi.arriveAsHunter(meet.meetId)
+          : meetsApi.arriveAsVictim(meet.meetId),
+        'Приход подтверждён',
+      );
     }
   };
 
@@ -97,10 +103,25 @@ export function MeetDetail({ meet }: { meet: Meet }) {
               variant="secondary"
               onPress={() => void advance()}
             />
+            <Button
+              disabled={busy}
+              label="Отменить"
+              variant="ghost"
+              onPress={() => void run(() => meetsApi.cancel(meet.meetId), 'Встреча отменена')}
+            />
             <Button label="Детали" variant="secondary" onPress={() => router.push(`/meet/${meet.meetId}`)} />
           </>
         ) : (
-          <Button label="Посмотреть итоги" variant="secondary" />
+          <Button
+            label="Оценить встречу"
+            variant="secondary"
+            onPress={() =>
+              void run(
+                () => meetsApi.rate({ meetId: meet.meetId, score: 5 }),
+                'Оценка отправлена',
+              )
+            }
+          />
         )}
       </View>
     </Card>
@@ -134,9 +155,7 @@ export function MeetsScreen() {
 
   return (
     <Page
-      eyebrow="Ваши планы"
       title="Встречи"
-      subtitle="От приглашения до впечатления — весь путь в одном месте."
       action={
         <View style={styles.tabs}>
           <Chip label="Активные" active={tab === 'active'} onPress={() => setTab('active')} />

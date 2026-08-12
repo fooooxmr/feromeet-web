@@ -1,5 +1,5 @@
-import { DiscoveryScreen } from '../../src/features/discovery/DiscoveryScreen';
+import { FavouritesScreen } from '../../src/features/favourites/FavouritesScreen';
 
 export default function FavouritesRoute() {
-  return <DiscoveryScreen favourites />;
+  return <FavouritesScreen />;
 }

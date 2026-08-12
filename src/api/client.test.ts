@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiRequest, configureTokenStorage, queryString } from './client';
+import { apiRequest, configureTokenStorage, queryString, API_BASE_URL } from './client';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -40,6 +40,7 @@ describe('apiRequest', () => {
       'Bearer access',
     );
     expect(init.body).toBe('{"value":1}');
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`${API_BASE_URL}/test`);
   });
 
   it('normalizes unsuccessful responses into ApiError', async () => {

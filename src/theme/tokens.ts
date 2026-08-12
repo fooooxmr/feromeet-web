@@ -1,31 +1,37 @@
 import { Platform, StyleSheet } from 'react-native';
 
 export const colors = {
-  ink: '#201A24',
-  muted: '#766D78',
-  canvas: '#F8F5F2',
+  ink: '#1B2430',
+  muted: '#6C7690',
+  canvas: '#FFFFFF',
   surface: '#FFFFFF',
-  soft: '#F1EAE7',
-  line: '#E8DFDC',
-  berry: '#9E3152',
-  berryDark: '#71213D',
-  blush: '#F5DCE3',
-  amber: '#D98C3F',
-  green: '#397761',
-  danger: '#B54444',
+  soft: '#FFF3E6',
+  line: '#FFEDDD',
+  berry: '#EF7C0D',
+  berryDark: '#D96A00',
+  blush: '#FFF3E6',
+  amber: '#FFB800',
+  green: '#22C55E',
+  danger: '#D93025',
+  overlay: 'rgba(16, 18, 24, 0.42)',
 } as const;
 
 export const radius = { sm: 12, md: 18, lg: 28, pill: 999 } as const;
 export const spacing = { xs: 6, sm: 10, md: 16, lg: 24, xl: 32 } as const;
 
+export const gradient = Platform.select({
+  web: { backgroundImage: 'linear-gradient(90deg, #EF7C0D 0%, #FFB800 100%)' },
+  default: { backgroundColor: colors.berry },
+});
+
 export const shadow = Platform.select({
   web: {
-    boxShadow: '0 18px 50px rgba(56, 33, 43, 0.10)',
+    boxShadow: '0 18px 40px rgba(27, 36, 48, 0.12)',
   },
   default: {
-    elevation: 6,
-    shadowColor: '#38212B',
-    shadowOpacity: 0.12,
+    elevation: 8,
+    shadowColor: '#1B2430',
+    shadowOpacity: 0.14,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
   },
@@ -41,13 +47,13 @@ export const type = StyleSheet.create({
   },
   title: {
     color: colors.ink,
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: '800',
-    letterSpacing: -0.8,
+    letterSpacing: -0.6,
   },
   subtitle: {
     color: colors.muted,
-    fontSize: 16,
-    lineHeight: 23,
+    fontSize: 15,
+    lineHeight: 22,
   },
 });

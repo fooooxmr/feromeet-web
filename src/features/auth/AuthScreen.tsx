@@ -46,8 +46,8 @@ export function PhoneScreen() {
 
   return (
     <AuthFrame
-      title="Встречайтесь по-настоящему"
-      subtitle="Оставьте номер — пришлём короткий код для входа или регистрации."
+      title="Вход по SMS"
+      subtitle="Оставьте номер — пришлём короткий код."
     >
       <View style={styles.modeRow}>
         <Pressable
@@ -113,7 +113,7 @@ export function OtpScreen() {
           ? await authApi.registerWithSms(phone, code)
           : await authApi.loginWithSms(phone, code);
       await setTokens(tokens);
-      router.replace('/swipes');
+      router.replace(tokens.registrationStatus === 'PROFILE_REQUIRED' ? '/onboarding' : '/swipes');
     } catch (loginError) {
       setError(
         loginError instanceof ApiError
@@ -128,7 +128,7 @@ export function OtpScreen() {
   return (
     <AuthFrame
       title="Введите код"
-      subtitle="Мы отправили четыре цифры по SMS. В demo-режиме подойдёт любой код."
+      subtitle="Мы отправили четыре цифры по SMS."
     >
       <Pressable onPress={() => input.current?.focus()} style={styles.codeRow}>
         {[0, 1, 2, 3].map((index) => (
@@ -174,73 +174,29 @@ function AuthFrame({
 }) {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.screen}>
-      <View style={styles.art}>
-        <View style={styles.sun} />
-        <View style={styles.ring} />
-        <View style={styles.artCopy}>
-          <Text style={styles.artEyebrow}>FEROMEET</Text>
-          <Text style={styles.artTitle}>Сначала интерес.{'\n'}Потом — встреча.</Text>
-          <Text style={styles.artSubtitle}>Без бесконечных переписок и случайных обещаний.</Text>
+      <View style={styles.formCard}>
+        <BrandMark />
+        <View style={styles.heading}>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.subtitle}>{subtitle}</Text>
         </View>
-      </View>
-      <View style={styles.formPane}>
-        <View style={styles.formCard}>
-          <BrandMark />
-          <View style={styles.heading}>
-            <Text style={styles.title}>{title}</Text>
-            <Text style={styles.subtitle}>{subtitle}</Text>
-          </View>
-          <View style={styles.form}>{children}</View>
-        </View>
+        <View style={styles.form}>{children}</View>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', backgroundColor: colors.canvas },
-  art: {
-    flexGrow: 1,
-    flexBasis: 420,
-    minHeight: 280,
-    overflow: 'hidden',
-    justifyContent: 'flex-end',
-    padding: spacing.xl,
-    backgroundColor: colors.berryDark,
-  },
-  sun: {
-    position: 'absolute',
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    top: -80,
-    right: -50,
-    backgroundColor: colors.amber,
-  },
-  ring: {
-    position: 'absolute',
-    width: 420,
-    height: 420,
-    borderRadius: 210,
-    borderWidth: 80,
-    borderColor: 'rgba(255,255,255,0.08)',
-    left: -150,
-    bottom: -180,
-  },
-  artCopy: { gap: spacing.sm, maxWidth: 540 },
-  artEyebrow: { color: '#F6C8D7', fontWeight: '900', letterSpacing: 2 },
-  artTitle: { color: colors.surface, fontSize: 42, lineHeight: 47, fontWeight: '900', letterSpacing: -1.3 },
-  artSubtitle: { color: '#E8CAD4', fontSize: 16, lineHeight: 23 },
-  formPane: {
-    flexGrow: 1,
-    flexBasis: 420,
+  screen: {
+    flex: 1,
+    backgroundColor: colors.canvas,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.lg,
   },
   formCard: {
     width: '100%',
-    maxWidth: 460,
+    maxWidth: 440,
     padding: spacing.xl,
     borderRadius: radius.lg,
     backgroundColor: colors.surface,

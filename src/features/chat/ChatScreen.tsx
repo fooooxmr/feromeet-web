@@ -22,7 +22,7 @@ export function ChatScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [draft, setDraft] = useState('');
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentUserId, setCurrentUserId] = useState('me');
   const [recipientId, setRecipientId] = useState('lena');
   const [typing, setTyping] = useState(false);
@@ -32,8 +32,14 @@ export function ChatScreen() {
   const demoMode = useSessionStore((state) => state.demoMode);
 
   useEffect(() => {
-    if (!id || demoMode) return;
+    if (!id) return;
     let active = true;
+    if (demoMode) {
+      setMessages(initialMessages);
+      return () => {
+        active = false;
+      };
+    }
     Promise.allSettled([chatApi.getHistory(id), profileApi.getMyProfile()]).then(
       ([historyResult, profileResult]) => {
         if (!active) return;

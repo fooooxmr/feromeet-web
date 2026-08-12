@@ -7,7 +7,7 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   use: {
-    baseURL: 'http://127.0.0.1:42891/feromeet-web/',
+    baseURL: 'http://127.0.0.1:42892/feromeet-web/',
     channel: 'chrome',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',

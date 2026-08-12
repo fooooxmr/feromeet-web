@@ -11,15 +11,19 @@ import {
   type TextInputProps,
   View,
 } from 'react-native';
-import { colors, radius, shadow, spacing, type } from '../theme/tokens';
+import { colors, gradient, radius, shadow, spacing, type } from '../theme/tokens';
 
 export function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
     <View style={styles.brand}>
       <View style={styles.brandGlyph}>
-        <Text style={styles.brandGlyphText}>F</Text>
+        <Text style={styles.brandHeart}>♥</Text>
       </View>
-      {!compact && <Text style={styles.brandText}>feromeet</Text>}
+      {!compact && (
+        <Text style={styles.brandText}>
+          FER <Text style={styles.brandAccent}>MEET</Text>
+        </Text>
+      )}
     </View>
   );
 }
@@ -42,7 +46,7 @@ export function Button({
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
-        styles[`button_${variant}`],
+        variant === 'primary' ? gradient : styles[`button_${variant}`],
         (pressed || disabled) && styles.buttonDimmed,
       ]}
     >
@@ -208,16 +212,16 @@ export function Sheet({
 const styles = StyleSheet.create({
   brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   brandGlyph: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.berry,
-    transform: [{ rotate: '-7deg' }],
+    ...gradient,
   },
-  brandGlyphText: { color: colors.surface, fontWeight: '900', fontSize: 21 },
-  brandText: { color: colors.ink, fontSize: 21, fontWeight: '900', letterSpacing: -0.8 },
+  brandHeart: { color: colors.surface, fontWeight: '900', fontSize: 16 },
+  brandText: { color: colors.ink, fontSize: 20, fontWeight: '900', letterSpacing: 1.4 },
+  brandAccent: { color: colors.berry },
   button: {
     minHeight: 48,
     paddingHorizontal: 20,
@@ -226,10 +230,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.berry,
   },
-  button_primary: { backgroundColor: colors.berry },
-  button_secondary: { backgroundColor: colors.blush },
-  button_ghost: { backgroundColor: colors.soft },
-  button_danger: { backgroundColor: '#F7E2E2' },
+  button_secondary: { backgroundColor: colors.soft },
+  button_ghost: { backgroundColor: '#F4F6F8' },
+  button_danger: { backgroundColor: '#FDECEC' },
   buttonDimmed: { opacity: 0.62 },
   buttonText: { color: colors.surface, fontWeight: '800', fontSize: 15 },
   buttonTextDark: { color: colors.ink },
@@ -251,11 +254,13 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: radius.pill,
     backgroundColor: colors.soft,
+    borderWidth: 1,
+    borderColor: colors.line,
   },
-  chipActive: { backgroundColor: colors.berry },
-  chipText: { color: colors.ink, fontSize: 13, fontWeight: '700' },
+  chipActive: { backgroundColor: colors.berry, borderColor: colors.berry },
+  chipText: { color: colors.berryDark, fontSize: 13, fontWeight: '700' },
   chipTextActive: { color: colors.surface },
-  avatar: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.blush },
+  avatar: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.soft },
   avatarText: { color: colors.berryDark, fontWeight: '900' },
   page: { width: '100%', maxWidth: 1080, alignSelf: 'center', padding: spacing.lg, gap: spacing.lg },
   pageHeader: {
@@ -284,7 +289,7 @@ const styles = StyleSheet.create({
     width: 54,
     height: 54,
     borderRadius: 27,
-    backgroundColor: colors.blush,
+    backgroundColor: colors.soft,
     color: colors.berry,
     textAlign: 'center',
     lineHeight: 54,
@@ -295,14 +300,15 @@ const styles = StyleSheet.create({
   stateMessage: { color: colors.muted, textAlign: 'center', lineHeight: 21, maxWidth: 390 },
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(31, 22, 27, 0.46)',
+    backgroundColor: 'rgba(16, 18, 24, 0.46)',
     alignItems: 'center',
     justifyContent: 'flex-end',
     padding: spacing.md,
   },
   sheet: {
     width: '100%',
-    maxWidth: 540,
+    maxWidth: 640,
+    maxHeight: '92%',
     borderRadius: radius.lg,
     backgroundColor: colors.surface,
     padding: spacing.lg,

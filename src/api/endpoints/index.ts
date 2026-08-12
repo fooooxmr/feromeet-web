@@ -5,6 +5,7 @@ import type {
   FeromeetUser,
   InviteRequest,
   Meet,
+  ReactionUser,
   SearchPreference,
 } from '../../domain/models';
 
@@ -28,6 +29,12 @@ export const authApi = {
       { phoneNumber, smsCode },
       false,
     ),
+
+  saveProfile: (form: FormData) =>
+    apiRequest<void>('/api/auth/registration/save-profile', {
+      method: 'POST',
+      body: form,
+    }),
 };
 
 export const discoveryApi = {
@@ -59,7 +66,7 @@ export const discoveryApi = {
     ),
 
   getFavorites: () =>
-    apiRequest<unknown[]>('/api/reaction/get-all-reactions'),
+    apiRequest<ReactionUser[]>('/api/reaction/get-all-reactions'),
 
   invite: (request: InviteRequest) =>
     post<void>('/api/meet/invite', request),

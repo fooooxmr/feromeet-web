@@ -1,9 +1,12 @@
 import type { ApiErrorBody, AuthTokens } from '../domain/models';
 
 const ORIGIN_API_URL = 'https://feromeet.com';
+const WEB_PROXY_URL = 'https://proxy-snowy-six-76.vercel.app/api/proxy';
 const configuredUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '');
+const isBrowser = typeof window !== 'undefined';
 
-export const API_BASE_URL = configuredUrl || ORIGIN_API_URL;
+export const API_BASE_URL =
+  configuredUrl || (isBrowser ? WEB_PROXY_URL : ORIGIN_API_URL);
 
 type TokenReader = () => { accessToken?: string; refreshToken?: string };
 type TokenWriter = (tokens?: AuthTokens) => void | Promise<void>;
