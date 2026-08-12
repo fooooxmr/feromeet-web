@@ -3,6 +3,7 @@ import { apiRequest, configureTokenStorage, queryString, API_BASE_URL } from './
 import {
   belarusLocalDigits,
   formatBelarusPhoneMask,
+  normalizeChatMessages,
   normalizePhone,
 } from '../domain/models';
 
@@ -129,5 +130,65 @@ describe('apiRequest', () => {
 
     await expect(apiRequest<{ ok: boolean }>('/users')).resolves.toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('normalizeChatMessages', () => {
+  it('unwraps nested lists and sorts ChatMessageResponse fields', () => {
+    const messages = normalizeChatMessages({
+      data: {
+        content: [
+          {
+            id: '2',
+            senderId: 'user-a',
+            recipientId: 'user-b',
+            content: 'second',
+            chatId: 'chat-1',
+            createdAt: '2026-08-12T12:00:00Z',
+            status: 'READ',
+          },
+          {
+            id: '1',
+            senderId: 'user-b',
+            recipientId: 'user-a',
+            content: 'first',
+            chatId: 'chat-1',
+            createdAt: '2026-08-12T11:00:00Z',
+          },
+        ],
+      },
+    });
+    expect(messages.map((item) => item.content)).toEqual(['first', 'second']);
+    expect(messages[0]).toMatchObject({
+      id: '1',
+      senderId: 'user-b',
+      recipientId: 'user-a',
+      chatId: 'chat-1',
+    });
+  });
+
+  it('keeps a raw ChatMessageResponse array', () => {
+    expect(
+      normalizeChatMessages([
+        {
+          id: 'm1',
+          senderId: 10,
+          recipientId: 20,
+          content: 'hello',
+          chatId: 'c1',
+          createdAt: '2026-08-12T10:00:00Z',
+        },
+      ]),
+    ).toEqual([
+      {
+        id: 'm1',
+        senderId: '10',
+        recipientId: '20',
+        content: 'hello',
+        chatId: 'c1',
+        createdAt: '2026-08-12T10:00:00Z',
+        status: undefined,
+      },
+    ]);
   });
 });

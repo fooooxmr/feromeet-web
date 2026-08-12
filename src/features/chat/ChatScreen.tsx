@@ -10,27 +10,49 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import type { ChatMessage } from '../../domain/models';
+import { photoUrl, type ChatMessage, type FeromeetUser } from '../../domain/models';
 import { messages as initialMessages } from '../demo/fixtures';
-import { Avatar } from '../../components/ui';
+import { Avatar, ScreenState } from '../../components/ui';
 import { colors, radius, spacing } from '../../theme/tokens';
+import { ApiError } from '../../api/client';
 import { chatApi, meetsApi, profileApi } from '../../api/endpoints';
 import { FeromeetChatSocket } from '../../api/chatSocket';
 import { useSessionStore } from '../../state/session';
 
+function asChatId(value: string | string[] | undefined) {
+  const chatId = Array.isArray(value) ? value[0] : value;
+  return chatId?.trim() || undefined;
+}
+
+function profileId(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const record = payload as Record<string, unknown>;
+  if (record.id != null && record.id !== '') return String(record.id);
+  for (const key of ['data', 'user', 'result'] as const) {
+    const nested = profileId(record[key]);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
 export function ChatScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const chatId = asChatId(id);
   const accessToken = useSessionStore((state) => state.accessToken);
   const demoMode = useSessionStore((state) => state.demoMode);
   const hydrated = useSessionStore((state) => state.hydrated);
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [currentUserId, setCurrentUserId] = useState('me');
-  const [recipientId, setRecipientId] = useState('lena');
+  const [currentUserId, setCurrentUserId] = useState(demoMode ? 'me' : '');
+  const [recipientId, setRecipientId] = useState(demoMode ? 'lena' : '');
   const [peerName, setPeerName] = useState(demoMode ? 'Лена' : 'Собеседник');
+  const [peerPhoto, setPeerPhoto] = useState<string>();
   const [meetId, setMeetId] = useState<number>();
   const [typing, setTyping] = useState(false);
+  const [loading, setLoading] = useState(!demoMode);
+  const [historyError, setHistoryError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
   const [socketState, setSocketState] = useState<'preview' | 'connecting' | 'connected' | 'offline'>(
     demoMode ? 'preview' : 'offline',
   );
@@ -38,56 +60,61 @@ export function ChatScreen() {
   const listRef = useRef<ScrollView>(null);
 
   useEffect(() => {
-    if (!id || !hydrated) return;
+    if (!chatId || !hydrated) return;
     let active = true;
     if (demoMode) {
       setMessages(initialMessages);
+      setLoading(false);
+      setHistoryError('');
       return () => {
         active = false;
       };
     }
-    Promise.allSettled([
-      chatApi.getHistory(id),
-      profileApi.getMyProfile(),
-      meetsApi.getActive(),
-      meetsApi.getPassed(),
-    ]).then(([historyResult, profileResult, activeResult, passedResult]) => {
+
+    setLoading(true);
+    setHistoryError('');
+    void chatApi
+      .getHistory(chatId)
+      .then((history) => {
         if (!active) return;
-        if (profileResult.status === 'fulfilled') {
-          setCurrentUserId(profileResult.value.id);
-        }
-        const allMeets = [
-          ...(activeResult.status === 'fulfilled' && Array.isArray(activeResult.value)
-            ? activeResult.value
-            : []),
-          ...(passedResult.status === 'fulfilled' && Array.isArray(passedResult.value)
-            ? passedResult.value
-            : []),
-        ];
-        const meet = allMeets.find((item) => item.chatId === id);
-        if (meet) {
-          setPeerName(meet.user.name);
-          setMeetId(meet.meetId);
-          setRecipientId(meet.user.id);
-          if (!demoMode) void meetsApi.markAsRead(meet.meetId).catch(() => undefined);
-        }
-        if (historyResult.status === 'fulfilled') {
-          setMessages(historyResult.value);
-          const ownId =
-            profileResult.status === 'fulfilled' ? profileResult.value.id : 'me';
-          const last = historyResult.value.at(-1);
-          if (last) {
-            setRecipientId(
-              last.senderId === ownId ? last.recipientId : last.senderId,
-            );
-          }
-        }
-      },
-    );
+        setMessages(history);
+        setHistoryError('');
+      })
+      .catch((error) => {
+        if (!active) return;
+        setMessages([]);
+        setHistoryError(
+          error instanceof ApiError ? error.message : 'Не удалось загрузить переписку',
+        );
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    void Promise.all([
+      profileApi.getMyProfile().catch(() => undefined),
+      meetsApi.getActive().catch(() => []),
+      meetsApi.getPassed().catch(() => []),
+    ]).then(([profile, activeMeets, passedMeets]) => {
+      if (!active) return;
+      const ownId = profileId(profile);
+      if (ownId) setCurrentUserId(ownId);
+      const meet = [...activeMeets, ...passedMeets].find(
+        (item) => String(item.chatId) === String(chatId),
+      );
+      if (meet?.user) {
+        const user = meet.user as FeromeetUser;
+        setPeerName(user.name);
+        setMeetId(meet.meetId);
+        setRecipientId(String(user.id));
+        setPeerPhoto(photoUrl(user.mainSmallPhotoFilename || user.mainPhotoFilename));
+        void meetsApi.markAsRead(meet.meetId).catch(() => undefined);
+      }
+    });
 
     if (accessToken) {
       setSocketState('connecting');
-      const socket = new FeromeetChatSocket(accessToken, id, {
+      const socket = new FeromeetChatSocket(accessToken, chatId, {
         onMessage: (message) => {
           if (!active) return;
           setMessages((current) =>
@@ -122,11 +149,11 @@ export function ChatScreen() {
       socketRef.current?.disconnect();
       socketRef.current = undefined;
     };
-  }, [accessToken, demoMode, hydrated, id]);
+  }, [accessToken, chatId, demoMode, hydrated, reloadKey]);
 
   const send = () => {
     const content = draft.trim();
-    if (!content) return;
+    if (!content || !chatId) return;
     const sent = socketRef.current?.sendMessage(recipientId, content) ?? false;
     setMessages((current) => [
       ...current,
@@ -134,7 +161,7 @@ export function ChatScreen() {
         id: `local-${Date.now()}`,
         senderId: currentUserId,
         recipientId,
-        chatId: id,
+        chatId,
         content,
         createdAt: new Date().toISOString(),
         status: sent ? 'SENDING' : 'PREVIEW',
@@ -153,7 +180,7 @@ export function ChatScreen() {
         <Pressable accessibilityLabel="Назад" onPress={() => router.back()} style={styles.back}>
           <Text style={styles.backText}>‹</Text>
         </Pressable>
-        <Avatar name={peerName} size={44} />
+        <Avatar name={peerName} size={44} uri={peerPhoto} />
         <View style={styles.headerCopy}>
           <Text style={styles.name}>{peerName}</Text>
           <Text style={socketState === 'connected' ? styles.online : styles.preview}>
@@ -174,7 +201,7 @@ export function ChatScreen() {
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
       >
         {messages.map((message, index) => {
-          const mine = message.senderId === currentUserId || message.senderId === 'me';
+          const mine = Boolean(currentUserId) && String(message.senderId) === String(currentUserId);
           const previous = messages[index - 1];
           const day = new Date(message.createdAt).toDateString();
           const showDay = !previous || new Date(previous.createdAt).toDateString() !== day;
@@ -209,7 +236,18 @@ export function ChatScreen() {
             </View>
           );
         })}
-        {messages.length === 0 && (
+        {loading && (
+          <ScreenState kind="loading" title="Загружаем переписку" message="Это займёт секунду" />
+        )}
+        {!loading && historyError ? (
+          <ScreenState
+            kind="error"
+            title="Не удалось загрузить чат"
+            message={historyError}
+            action={() => setReloadKey((value) => value + 1)}
+          />
+        ) : null}
+        {!loading && !historyError && messages.length === 0 && (
           <Text style={styles.empty}>Пока нет сообщений. Напишите первым.</Text>
         )}
         {typing && <Text style={styles.typing}>{peerName} печатает…</Text>}

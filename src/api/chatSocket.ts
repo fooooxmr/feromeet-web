@@ -1,5 +1,5 @@
 import { apiRequest } from './client';
-import type { ChatMessage } from '../domain/models';
+import { normalizeChatMessage, type ChatMessage } from '../domain/models';
 
 type SocketState = 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -111,8 +111,10 @@ export class FeromeetChatSocket {
       this.callbacks.onState?.('connected');
       this.subscribe(
         `/user/queue/chat.${this.chatId}.messages`,
-        (body) =>
-          this.callbacks.onMessage?.(safePayload(body) as ChatMessage),
+        (body) => {
+          const message = normalizeChatMessage(safePayload(body));
+          if (message) this.callbacks.onMessage?.(message);
+        },
       );
       this.subscribe(
         `/user/queue/chat.${this.chatId}.message-status`,

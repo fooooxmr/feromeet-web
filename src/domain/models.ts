@@ -181,21 +181,50 @@ export function matchesSearchPreference(user: FeromeetUser, preference: SearchPr
   return true;
 }
 
-export function unwrapList<T>(payload: unknown): T[] {
+const LIST_KEYS = ['data', 'content', 'items', 'messages', 'result', 'body'] as const;
+
+export function unwrapList<T>(payload: unknown, depth = 0): T[] {
   if (Array.isArray(payload)) return payload as T[];
-  if (payload && typeof payload === 'object') {
-    const record = payload as {
-      data?: unknown;
-      content?: unknown;
-      items?: unknown;
-      messages?: unknown;
-      result?: unknown;
-    };
-    for (const value of [record.data, record.content, record.items, record.messages, record.result]) {
-      if (Array.isArray(value)) return value as T[];
+  if (!payload || typeof payload !== 'object' || depth > 4) return [];
+  const record = payload as Record<string, unknown>;
+  for (const key of LIST_KEYS) {
+    const value = record[key];
+    if (Array.isArray(value)) return value as T[];
+  }
+  for (const key of LIST_KEYS) {
+    const value = record[key];
+    if (value && typeof value === 'object') {
+      const nested = unwrapList<T>(value, depth + 1);
+      if (nested.length) return nested;
     }
   }
   return [];
+}
+
+function scalarId(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'object' && !Array.isArray(value) && 'id' in value) {
+    return String((value as { id?: unknown }).id ?? '');
+  }
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  return '';
+}
+
+function timestamp(value: unknown): string {
+  if (typeof value === 'string' && value) return value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value > 1e12 ? value : value * 1000).toISOString();
+  }
+  if (Array.isArray(value) && typeof value[0] === 'number') {
+    const year = value[0];
+    const month = typeof value[1] === 'number' ? value[1] : 1;
+    const day = typeof value[2] === 'number' ? value[2] : 1;
+    const hour = typeof value[3] === 'number' ? value[3] : 0;
+    const minute = typeof value[4] === 'number' ? value[4] : 0;
+    const second = typeof value[5] === 'number' ? value[5] : 0;
+    return new Date(Date.UTC(year, month - 1, day, hour, minute, second)).toISOString();
+  }
+  return '';
 }
 
 const STAGE_TITLES: Record<string, string> = {
@@ -263,17 +292,26 @@ export function normalizeMeets(payload: unknown): Meet[] {
 export function normalizeChatMessage(raw: unknown): ChatMessage | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const record = raw as Record<string, unknown>;
-  const content = String(record.content ?? record.text ?? record.message ?? '');
-  const id = String(record.id ?? '');
+  const nested =
+    record.message && typeof record.message === 'object'
+      ? (record.message as Record<string, unknown>)
+      : record;
+  const content = String(nested.content ?? nested.text ?? nested.message ?? record.content ?? '');
+  const id = scalarId(nested.id ?? record.id);
   if (!id && !content) return undefined;
+  const createdAt =
+    timestamp(nested.createdAt ?? nested.timestamp ?? record.createdAt ?? record.timestamp) ||
+    new Date().toISOString();
   return {
-    id: id || `msg-${record.createdAt ?? Date.now()}`,
-    senderId: String(record.senderId ?? record.fromUserId ?? record.from ?? ''),
-    recipientId: String(record.recipientId ?? record.toUserId ?? record.to ?? ''),
+    id: id || `msg-${createdAt}`,
+    senderId: scalarId(nested.senderId ?? nested.fromUserId ?? nested.from ?? nested.sender),
+    recipientId: scalarId(
+      nested.recipientId ?? nested.toUserId ?? nested.to ?? nested.recipient,
+    ),
     content,
-    chatId: String(record.chatId ?? ''),
-    createdAt: String(record.createdAt ?? record.timestamp ?? new Date().toISOString()),
-    status: record.status ? String(record.status) : undefined,
+    chatId: scalarId(nested.chatId ?? record.chatId),
+    createdAt,
+    status: nested.status != null ? String(nested.status) : undefined,
   };
 }
 
@@ -281,7 +319,10 @@ export function normalizeChatMessages(payload: unknown): ChatMessage[] {
   return unwrapList(payload)
     .map(normalizeChatMessage)
     .filter((item): item is ChatMessage => Boolean(item))
-    .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt));
+    .sort(
+      (left, right) =>
+        (Date.parse(left.createdAt) || 0) - (Date.parse(right.createdAt) || 0),
+    );
 }
 
 export function unwrapReactions(payload: unknown): ReactionUser[] {
