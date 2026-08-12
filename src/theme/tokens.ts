@@ -1,38 +1,45 @@
 import { Platform, StyleSheet } from 'react-native';
 
 export const colors = {
-  ink: '#1B2430',
-  muted: '#6C7690',
+  ink: '#151726',
+  muted: '#9BA0AA',
+  body: '#363A45',
   canvas: '#FFFFFF',
+  stage: '#F4F1EC',
   surface: '#FFFFFF',
   soft: '#FFF3E6',
-  line: '#FFEDDD',
+  line: '#E6E6E6',
   berry: '#EF7C0D',
   berryDark: '#D96A00',
   blush: '#FFF3E6',
   amber: '#FFB800',
-  green: '#22C55E',
-  danger: '#D93025',
-  overlay: 'rgba(16, 18, 24, 0.42)',
+  green: '#4CAF50',
+  danger: '#FF5A5F',
+  overlay: 'rgba(0, 0, 0, 0.45)',
 } as const;
 
-export const radius = { sm: 12, md: 18, lg: 28, pill: 999 } as const;
-export const spacing = { xs: 6, sm: 10, md: 16, lg: 24, xl: 32 } as const;
+export const fontFamily = Platform.select({
+  web: 'Golos Text, system-ui, sans-serif',
+  default: undefined,
+});
+
+export const radius = { sm: 16, md: 25, lg: 32, pill: 999 } as const;
+export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 } as const;
 
 export const gradient = Platform.select({
-  web: { backgroundImage: 'linear-gradient(90deg, #EF7C0D 0%, #FFB800 100%)' },
+  web: { backgroundImage: 'linear-gradient(90deg, #FFB800 0%, #EF7C0D 100%)' },
   default: { backgroundColor: colors.berry },
 });
 
 export const shadow = Platform.select({
   web: {
-    boxShadow: '0 18px 40px rgba(27, 36, 48, 0.12)',
+    boxShadow: '0 12px 32px rgba(21, 23, 38, 0.12)',
   },
   default: {
     elevation: 8,
-    shadowColor: '#1B2430',
+    shadowColor: '#151726',
     shadowOpacity: 0.14,
-    shadowRadius: 18,
+    shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
   },
 });
@@ -41,19 +48,21 @@ export const type = StyleSheet.create({
   eyebrow: {
     color: colors.berry,
     fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    fontFamily,
   },
   title: {
     color: colors.ink,
     fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.6,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+    fontFamily,
   },
   subtitle: {
     color: colors.muted,
     fontSize: 15,
     lineHeight: 22,
+    fontFamily,
   },
 });

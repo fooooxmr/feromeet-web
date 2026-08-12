@@ -1,4 +1,5 @@
 import type { PropsWithChildren, ReactNode } from 'react';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -11,22 +12,10 @@ import {
   type TextInputProps,
   View,
 } from 'react-native';
-import { colors, gradient, radius, shadow, spacing, type } from '../theme/tokens';
+import { formatTag, type TagView } from '../domain/tags';
+import { colors, fontFamily, gradient, radius, shadow, spacing, type } from '../theme/tokens';
 
-export function BrandMark({ compact = false }: { compact?: boolean }) {
-  return (
-    <View style={styles.brand}>
-      <View style={styles.brandGlyph}>
-        <Text style={styles.brandHeart}>♥</Text>
-      </View>
-      {!compact && (
-        <Text style={styles.brandText}>
-          FER <Text style={styles.brandAccent}>MEET</Text>
-        </Text>
-      )}
-    </View>
-  );
-}
+export { BrandMark, HeartMark } from './Logo';
 
 export function Button({
   label,
@@ -77,15 +66,37 @@ export function Chip({
   label,
   active,
   onPress,
+  icon,
 }: {
   label: string;
   active?: boolean;
   onPress?: () => void;
+  icon?: string;
 }) {
+  const tag = /^(ferotag_|inter_)/.test(label) ? formatTag(label) : undefined;
   return (
     <Pressable onPress={onPress} style={[styles.chip, active && styles.chipActive]}>
-      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
+      <Text style={[styles.chipText, active && styles.chipTextActive]}>
+        {icon || tag ? `${icon ?? tag?.icon}  ${tag?.label || label}` : label}
+      </Text>
     </Pressable>
+  );
+}
+
+export function TagChip({
+  tag,
+  glass,
+}: {
+  tag: TagView;
+  glass?: boolean;
+}) {
+  if (!tag.label) return null;
+  return (
+    <View style={[styles.tagChip, glass && styles.tagChipGlass]}>
+      <Text style={[styles.tagChipText, glass && styles.tagChipTextGlass]}>
+        {tag.icon}  {tag.label}
+      </Text>
+    </View>
   );
 }
 
@@ -100,9 +111,9 @@ export function Avatar({
 }) {
   if (uri) {
     return (
-      <Image
+      <Photo
         accessibilityLabel={name}
-        source={{ uri }}
+        uri={uri}
         style={{ width: size, height: size, borderRadius: size / 2 }}
       />
     );
@@ -122,8 +133,34 @@ export function Avatar({
   );
 }
 
+export function Photo({
+  uri,
+  style,
+  accessibilityLabel,
+}: {
+  uri: string;
+  style: object;
+  accessibilityLabel?: string;
+}) {
+  const [ready, setReady] = useState(false);
+  return (
+    <View style={[styles.photoWrap, style]}>
+      {!ready && (
+        <View style={styles.photoLoader}>
+          <ActivityIndicator color={colors.amber} />
+        </View>
+      )}
+      <Image
+        accessibilityLabel={accessibilityLabel}
+        onLoad={() => setReady(true)}
+        source={{ uri }}
+        style={[StyleSheet.absoluteFill, { opacity: ready ? 1 : 0 }]}
+      />
+    </View>
+  );
+}
+
 export function Page({
-  eyebrow,
   title,
   subtitle,
   action,
@@ -141,7 +178,6 @@ export function Page({
     >
       <View style={styles.pageHeader}>
         <View style={styles.pageHeading}>
-          {eyebrow && <Text style={type.eyebrow}>{eyebrow}</Text>}
           <Text style={type.title}>{title}</Text>
           {subtitle && <Text style={type.subtitle}>{subtitle}</Text>}
         </View>
@@ -210,76 +246,76 @@ export function Sheet({
 }
 
 const styles = StyleSheet.create({
-  brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  brandGlyph: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...gradient,
-  },
-  brandHeart: { color: colors.surface, fontWeight: '900', fontSize: 16 },
-  brandText: { color: colors.ink, fontSize: 20, fontWeight: '900', letterSpacing: 1.4 },
-  brandAccent: { color: colors.berry },
   button: {
-    minHeight: 48,
+    minHeight: 52,
     paddingHorizontal: 20,
     borderRadius: radius.pill,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.berry,
   },
-  button_secondary: { backgroundColor: colors.soft },
-  button_ghost: { backgroundColor: '#F4F6F8' },
+  button_secondary: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line },
+  button_ghost: { backgroundColor: 'transparent' },
   button_danger: { backgroundColor: '#FDECEC' },
   buttonDimmed: { opacity: 0.62 },
-  buttonText: { color: colors.surface, fontWeight: '800', fontSize: 15 },
+  buttonText: { color: colors.surface, fontWeight: '700', fontSize: 16, fontFamily },
   buttonTextDark: { color: colors.ink },
   fieldWrap: { gap: 7 },
-  fieldLabel: { color: colors.ink, fontSize: 13, fontWeight: '700' },
+  fieldLabel: { color: colors.ink, fontSize: 13, fontWeight: '600', fontFamily },
   field: {
     minHeight: 50,
-    borderRadius: radius.md,
+    borderRadius: 17,
     borderWidth: 1,
     borderColor: colors.line,
     color: colors.ink,
     backgroundColor: colors.surface,
     paddingHorizontal: 16,
     fontSize: 16,
+    fontFamily,
   },
   fieldMultiline: { minHeight: 104, paddingTop: 14, textAlignVertical: 'top' },
   chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: radius.pill,
-    backgroundColor: colors.soft,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.line,
   },
   chipActive: { backgroundColor: colors.berry, borderColor: colors.berry },
-  chipText: { color: colors.berryDark, fontSize: 13, fontWeight: '700' },
+  chipText: { color: colors.ink, fontSize: 13, fontWeight: '600', fontFamily },
   chipTextActive: { color: colors.surface },
+  tagChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.soft,
+  },
+  tagChipGlass: { backgroundColor: 'rgba(255,255,255,0.22)' },
+  tagChipText: { color: colors.berryDark, fontSize: 12, fontWeight: '600', fontFamily },
+  tagChipTextGlass: { color: '#fff' },
   avatar: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.soft },
-  avatarText: { color: colors.berryDark, fontWeight: '900' },
-  page: { width: '100%', maxWidth: 1080, alignSelf: 'center', padding: spacing.lg, gap: spacing.lg },
+  avatarText: { color: colors.berryDark, fontWeight: '800', fontFamily },
+  photoWrap: { overflow: 'hidden', backgroundColor: '#1A1714' },
+  photoLoader: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
+  page: { width: '100%', padding: spacing.lg, gap: spacing.lg, paddingBottom: 28 },
   pageHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     gap: spacing.md,
   },
-  pageHeading: { flex: 1, gap: 7 },
+  pageHeading: { flex: 1, gap: 4, minWidth: 0 },
   card: {
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     padding: spacing.lg,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.line,
-    ...shadow,
   },
   state: {
-    minHeight: 360,
+    flex: 1,
+    minHeight: 280,
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
@@ -296,20 +332,21 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '800',
   },
-  stateTitle: { color: colors.ink, fontSize: 20, fontWeight: '800', marginTop: 6 },
-  stateMessage: { color: colors.muted, textAlign: 'center', lineHeight: 21, maxWidth: 390 },
+  stateTitle: { color: colors.ink, fontSize: 20, fontWeight: '700', marginTop: 6, fontFamily },
+  stateMessage: { color: colors.muted, textAlign: 'center', lineHeight: 21, maxWidth: 320, fontFamily },
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(16, 18, 24, 0.46)',
+    backgroundColor: colors.overlay,
     alignItems: 'center',
     justifyContent: 'flex-end',
     padding: spacing.md,
   },
   sheet: {
     width: '100%',
-    maxWidth: 640,
+    maxWidth: 430,
     maxHeight: '92%',
-    borderRadius: radius.lg,
+    borderTopLeftRadius: radius.md,
+    borderTopRightRadius: radius.md,
     backgroundColor: colors.surface,
     padding: spacing.lg,
     gap: spacing.md,
@@ -323,6 +360,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.line,
   },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sheetTitle: { color: colors.ink, fontSize: 22, fontWeight: '900' },
+  sheetTitle: { color: colors.ink, fontSize: 22, fontWeight: '700', fontFamily, flex: 1, paddingRight: 12 },
   close: { color: colors.muted, fontSize: 32, lineHeight: 34 },
 });

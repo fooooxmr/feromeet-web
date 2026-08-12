@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { Image, Linking, Platform, StyleSheet, Switch, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Avatar, Button, Card, Chip, Field, Page, Sheet } from '../../components/ui';
-import { colors, radius, spacing } from '../../theme/tokens';
+import { Avatar, Button, Card, Chip, Field, Page, ScreenState, Sheet } from '../../components/ui';
+import { colors, fontFamily, spacing } from '../../theme/tokens';
 import { profileApi } from '../../api/endpoints';
 import { ageFromBirthday, photoUrl, type FeromeetUser } from '../../domain/models';
+import { userChips } from '../../domain/tags';
+import { demoMe } from '../demo/fixtures';
 import { useSessionStore } from '../../state/session';
 
 function ProfilePreview({ profile }: { profile?: FeromeetUser }) {
@@ -28,7 +30,9 @@ function ProfilePreview({ profile }: { profile?: FeromeetUser }) {
         {profile?.textAbout ?? 'Добавьте описание, чтобы приглашения выглядели живыми.'}
       </Text>
       <View style={styles.chips}>
-        {profile?.ferotags?.map((interest) => <Chip key={interest} label={interest} />)}
+        {userChips(profile ?? {}).map((tag) => (
+          <Chip key={tag.key} label={tag.key} />
+        ))}
       </View>
     </Card>
   );
@@ -48,10 +52,19 @@ export function ProfileScreen({ editing = false }: { editing?: boolean }) {
   const [photoUri, setPhotoUri] = useState<string>();
   const signOut = useSessionStore((state) => state.signOut);
   const demoMode = useSessionStore((state) => state.demoMode);
+  const [loading, setLoading] = useState(!demoMode);
 
   useEffect(() => {
-    if (demoMode) return;
+    if (demoMode) {
+      setProfile(demoMe);
+      setName(demoMe.name);
+      setCity(demoMe.city ?? '');
+      setHeight(String(demoMe.height ?? 170));
+      setAbout(demoMe.textAbout ?? '');
+      return;
+    }
     let active = true;
+    setLoading(true);
     profileApi.getMyProfile()
       .then((value) => {
         if (active) {
@@ -60,10 +73,14 @@ export function ProfileScreen({ editing = false }: { editing?: boolean }) {
           if (value.textAbout) setAbout(value.textAbout);
           if (value.name) setName(value.name);
           if (value.city) setCity(value.city);
+          setMessage('');
         }
       })
       .catch(() => {
         if (active) setMessage('Не удалось загрузить профиль');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
     return () => {
       active = false;
@@ -139,6 +156,10 @@ export function ProfileScreen({ editing = false }: { editing?: boolean }) {
     }
   };
 
+  if (loading) {
+    return <ScreenState kind="loading" title="Загружаем профиль" message="Это займёт секунду" />;
+  }
+
   if (editing) {
     return (
       <Page title="Профиль">
@@ -189,42 +210,38 @@ export function ProfileScreen({ editing = false }: { editing?: boolean }) {
     <>
       <Page
         title="Профиль"
-        action={<Button label="Редактировать" onPress={() => router.push('/profile/edit')} />}
+        action={<Button label="Редактировать" variant="secondary" onPress={() => router.push('/profile/edit')} />}
       >
         <View style={styles.columns}>
-          <View style={styles.main}>
-            <ProfilePreview profile={profile} />
-          </View>
-          <View style={styles.side}>
-            <Card>
-              <Text style={styles.sectionTitle}>Готов к встрече</Text>
-              <View style={styles.settingRow}>
-                <Text style={styles.muted}>Показывать профиль в свайпах</Text>
-                <Switch
-                  value={ready}
-                  onValueChange={setReady}
-                  thumbColor={ready ? colors.berry : colors.muted}
-                />
-              </View>
-            </Card>
-            <Card>
-              <Text style={styles.sectionTitle}>Безопасность</Text>
-              <Text style={styles.muted}>Управление аккаунтом и поддержка</Text>
-              <View style={styles.settingsActions}>
-                <Button
-                  label="Написать в поддержку"
-                  variant="ghost"
-                  onPress={() => void Linking.openURL('mailto:hello@inera.by')}
-                />
-                <Button
-                  label="Выйти"
-                  variant="ghost"
-                  onPress={() => void signOut().then(() => router.replace('/phone'))}
-                />
-                <Button label="Удалить аккаунт" variant="danger" onPress={() => setDeleteOpen(true)} />
-              </View>
-            </Card>
-          </View>
+          <ProfilePreview profile={profile} />
+          <Card>
+            <Text style={styles.sectionTitle}>Готов к встрече</Text>
+            <View style={styles.settingRow}>
+              <Text style={styles.muted}>Показывать профиль в свайпах</Text>
+              <Switch
+                value={ready}
+                onValueChange={setReady}
+                thumbColor={ready ? colors.berry : colors.muted}
+              />
+            </View>
+          </Card>
+          <Card>
+            <Text style={styles.sectionTitle}>Безопасность</Text>
+            <Text style={styles.muted}>Управление аккаунтом и поддержка</Text>
+            <View style={styles.settingsActions}>
+              <Button
+                label="Написать в поддержку"
+                variant="ghost"
+                onPress={() => void Linking.openURL('mailto:hello@inera.by')}
+              />
+              <Button
+                label="Выйти"
+                variant="ghost"
+                onPress={() => void signOut().then(() => router.replace('/phone'))}
+              />
+              <Button label="Удалить аккаунт" variant="danger" onPress={() => setDeleteOpen(true)} />
+            </View>
+          </Card>
         </View>
       </Page>
       <Sheet visible={deleteOpen} onClose={() => setDeleteOpen(false)} title="Удалить аккаунт?">
@@ -240,29 +257,23 @@ export function ProfileScreen({ editing = false }: { editing?: boolean }) {
 }
 
 const styles = StyleSheet.create({
-  columns: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg, alignItems: 'flex-start' },
-  main: { flexGrow: 2, flexBasis: 520 },
-  side: { flexGrow: 1, flexBasis: 290, gap: spacing.md },
+  columns: { gap: spacing.md },
   hero: {
-    minHeight: 190,
-    borderRadius: radius.lg,
-    backgroundColor: '#E9CDC5',
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.xl,
-    gap: spacing.lg,
+    gap: spacing.md,
   },
-  heroCopy: { flex: 1, gap: 5 },
-  name: { color: colors.ink, fontSize: 27, fontWeight: '900' },
-  location: { color: colors.muted },
+  heroCopy: { flex: 1, minWidth: 0, gap: 5 },
+  name: { color: colors.ink, fontSize: 22, fontWeight: '700', fontFamily },
+  location: { color: colors.muted, fontFamily },
   readiness: {
     height: 7,
     marginTop: spacing.sm,
     borderRadius: 4,
     overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.56)',
+    backgroundColor: colors.line,
   },
-  readinessFill: { width: '82%', height: '100%', backgroundColor: colors.green },
+  readinessFill: { height: '100%', backgroundColor: colors.green },
   readinessText: { color: colors.green, fontSize: 12, fontWeight: '800' },
   bio: { color: colors.ink, fontSize: 15, lineHeight: 23, marginVertical: spacing.lg },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },

@@ -2,29 +2,29 @@ import type { PropsWithChildren } from 'react';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
-import { BrandMark } from './ui';
-import { colors, radius, spacing } from '../theme/tokens';
+import { BrandMark } from './Logo';
+import { colors, fontFamily, shadow, spacing } from '../theme/tokens';
 import { meetsApi } from '../api/endpoints';
 import { useSessionStore } from '../state/session';
 
 const items = [
-  { href: '/swipes', label: 'Свайпы', icon: '▣' },
-  { href: '/meets', label: 'Встречи', icon: '♡' },
-  { href: '/favourites', label: 'Симпатии', icon: '♥' },
-  { href: '/profile', label: 'Профиль', icon: '○' },
+  { href: '/swipes', label: 'Свайпы', icon: '▣', activeIcon: '▣' },
+  { href: '/meets', label: 'Встречи', icon: '♡', activeIcon: '♥' },
+  { href: '/favourites', label: 'Симпатии', icon: '♡♡', activeIcon: '♥♥' },
+  { href: '/profile', label: 'Профиль', icon: '○', activeIcon: '●' },
 ] as const;
 
 function NavItem({
   href,
   label,
   icon,
-  compact,
+  activeIcon,
   badge,
 }: {
   href: (typeof items)[number]['href'];
   label: string;
   icon: string;
-  compact: boolean;
+  activeIcon: string;
   badge?: number;
 }) {
   const pathname = usePathname();
@@ -35,24 +35,24 @@ function NavItem({
     <Pressable
       accessibilityRole="link"
       onPress={() => router.push(href)}
-      style={[styles.item, compact && styles.itemCompact, active && styles.itemActive]}
+      style={styles.item}
     >
       <View style={styles.iconWrap}>
-        <Text style={[styles.icon, active && styles.activeText]}>{icon}</Text>
+        <Text style={[styles.icon, active && styles.activeText]}>
+          {active ? activeIcon : icon}
+        </Text>
         {!!badge && badge > 0 && (
           <Text style={styles.badge}>{badge > 99 ? '99+' : badge}</Text>
         )}
       </View>
-      <Text style={[styles.itemText, compact && styles.itemTextCompact, active && styles.activeText]}>
-        {label}
-      </Text>
+      <Text style={[styles.itemText, active && styles.activeText]}>{label}</Text>
     </Pressable>
   );
 }
 
 export function AppShell({ children }: PropsWithChildren) {
   const { width } = useWindowDimensions();
-  const desktop = width >= 860;
+  const framed = width >= 860;
   const demoMode = useSessionStore((state) => state.demoMode);
   const isAuthenticated = useSessionStore((state) => state.isAuthenticated);
   const [unread, setUnread] = useState(0);
@@ -75,103 +75,105 @@ export function AppShell({ children }: PropsWithChildren) {
   }, [demoMode, isAuthenticated]);
 
   return (
-    <View style={styles.shell}>
-      {desktop && (
-        <View style={styles.topBar}>
-          <BrandMark />
-          <View style={styles.topNav}>
-            {items.map((item) => (
-              <NavItem
-                key={item.href}
-                {...item}
-                compact={false}
-                badge={item.href === '/meets' ? unread : undefined}
-              />
-            ))}
-          </View>
-        </View>
-      )}
-      <View style={[styles.content, !desktop && styles.contentMobile]}>{children}</View>
-      {!desktop && (
-        <View style={styles.bottomBar}>
+    <View style={[styles.stage, framed && styles.stageDesktop]}>
+      <View style={[styles.phone, framed && styles.phoneDesktop]}>
+      <View style={styles.body}>{children}</View>
+      <View style={styles.bottomBar}>
           {items.map((item) => (
             <NavItem
               key={item.href}
               {...item}
-              compact
               badge={item.href === '/meets' ? unread : undefined}
             />
           ))}
         </View>
+      </View>
+    </View>
+  );
+}
+
+export function AppHeader({
+  onFilter,
+}: {
+  onFilter?: () => void;
+}) {
+  return (
+    <View style={styles.header}>
+      <BrandMark />
+      {onFilter ? (
+        <Pressable accessibilityLabel="Фильтры" onPress={onFilter} style={styles.filter}>
+          <Text style={styles.filterIcon}>☰</Text>
+        </Pressable>
+      ) : (
+        <View style={styles.filter} />
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  shell: { flex: 1, backgroundColor: colors.canvas },
-  topBar: {
-    minHeight: 72,
+  stage: { flex: 1, backgroundColor: colors.canvas },
+  stageDesktop: {
+    backgroundColor: colors.stage,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+  },
+  phone: { flex: 1, backgroundColor: colors.canvas },
+  phoneDesktop: {
+    width: 430,
+    maxWidth: '100%',
+    height: '100%',
+    maxHeight: 920,
+    borderRadius: 36,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E8E2DA',
+    ...shadow,
+  },
+  body: { flex: 1 },
+  header: {
+    minHeight: 56,
     paddingHorizontal: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing.lg,
   },
-  topNav: { flexDirection: 'row', gap: spacing.xs },
+  filter: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
+  filterIcon: { color: colors.amber, fontSize: 22, fontWeight: '800' },
   item: {
-    minHeight: 44,
-    paddingHorizontal: 14,
-    borderRadius: radius.pill,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  itemCompact: {
     flex: 1,
     minHeight: 58,
-    paddingHorizontal: 2,
-    flexDirection: 'column',
+    alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
   },
-  itemActive: { backgroundColor: colors.soft },
   iconWrap: { position: 'relative' },
-  icon: { width: 22, textAlign: 'center', color: colors.muted, fontSize: 18, fontWeight: '800' },
+  icon: { color: colors.muted, fontSize: 16, fontWeight: '700' },
   badge: {
     position: 'absolute',
-    top: -6,
-    right: -10,
-    minWidth: 16,
+    top: -7,
+    right: -14,
+    minWidth: 18,
     height: 16,
     paddingHorizontal: 4,
     borderRadius: 8,
     overflow: 'hidden',
     textAlign: 'center',
     lineHeight: 16,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
     color: colors.surface,
     backgroundColor: colors.amber,
   },
-  itemText: { color: colors.muted, fontWeight: '700', fontSize: 14 },
-  itemTextCompact: { width: '100%', textAlign: 'center', fontSize: 10 },
-  activeText: { color: colors.berry },
-  content: { flex: 1 },
-  contentMobile: { paddingBottom: 70 },
+  itemText: { color: colors.muted, fontWeight: '600', fontSize: 11, fontFamily },
+  activeText: { color: colors.amber },
   bottomBar: {
-    position: 'absolute',
-    left: 10,
-    right: 10,
-    bottom: 8,
-    minHeight: 64,
+    minHeight: 58,
     flexDirection: 'row',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: colors.line,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
     backgroundColor: colors.surface,
-    paddingHorizontal: 4,
+    paddingBottom: 4,
   },
 });

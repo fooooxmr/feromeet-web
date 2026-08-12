@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
-  Image,
   PanResponder,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import {
@@ -18,47 +17,46 @@ import {
   type FeromeetUser,
   type SearchPreference,
 } from '../../domain/models';
+import { FEROTAG_OPTIONS, formatTag, userChips } from '../../domain/tags';
 import { people } from '../demo/fixtures';
-import { Avatar, BrandMark, Button, Chip, Field, ScreenState, Sheet } from '../../components/ui';
-import { colors, gradient, radius, shadow, spacing } from '../../theme/tokens';
+import { AppHeader } from '../../components/AppShell';
+import { Button, Chip, Field, HeartMark, Photo, ScreenState, Sheet, TagChip } from '../../components/ui';
+import { colors, fontFamily, gradient, radius, shadow, spacing } from '../../theme/tokens';
 import { discoveryApi } from '../../api/endpoints';
 import { ApiError } from '../../api/client';
 import { useSessionStore } from '../../state/session';
 
-const EXPENSE_OPTIONS: Array<{ type: ExpenseType; title: string; subtitle: string }> = [
-  { type: 'I_PAY', title: 'Я угощаю', subtitle: 'Всё включено' },
-  { type: 'SPLIT', title: 'Пополам', subtitle: '50/50' },
-  { type: 'YOU_PAY', title: 'Угостишь меня?', subtitle: 'За твой счёт' },
+const EXPENSE_OPTIONS: Array<{ type: ExpenseType; title: string; subtitle: string; icon: string }> = [
+  { type: 'I_PAY', title: 'Я угощаю', subtitle: 'Всё включено', icon: '🤝' },
+  { type: 'SPLIT', title: 'Пополам', subtitle: '50/50', icon: '🎟️' },
+  { type: 'YOU_PAY', title: 'Угостишь меня?', subtitle: 'За твой счёт', icon: '🎁' },
 ];
 
 function displayAge(person: FeromeetUser) {
-  return ageFromBirthday(person.birthday) ?? 22;
+  return ageFromBirthday(person.birthday);
 }
 
 function DiscoveryCard({
   person,
-  width,
-  height,
   onNextPhoto,
   photoIndex,
 }: {
   person: FeromeetUser;
-  width: number;
-  height: number;
   onNextPhoto: () => void;
   photoIndex: number;
 }) {
   const photos = userPhotos(person);
   const uri = photoUrl(photos[photoIndex] ?? photos[0] ?? person.mainPhotoFilename);
+  const age = displayAge(person);
+  const online = !person.lastSeen;
+  const chips = userChips(person);
 
   return (
-    <Pressable onPress={onNextPhoto} style={[styles.card, { width, height }]}>
+    <Pressable onPress={onNextPhoto} style={styles.card}>
       {uri ? (
-        <Image source={{ uri }} style={styles.cardImage} />
+        <Photo uri={uri} style={styles.cardImage} accessibilityLabel={person.name} />
       ) : (
-        <View style={[styles.cardImage, styles.cardFallback]}>
-          <Avatar name={person.name} size={120} />
-        </View>
+        <View style={[styles.cardImage, styles.cardFallback]} />
       )}
       <View style={styles.cardScrim} />
       <View style={styles.storyRow}>
@@ -70,22 +68,20 @@ function DiscoveryCard({
         ))}
       </View>
       <View style={styles.readyBadge}>
-        <Text style={styles.readyText}>{person.readyToGo ?? 50} %</Text>
+        <Text style={styles.readyText}>{person.readyToGo ?? 0} %</Text>
       </View>
       <View style={styles.cardMeta}>
-        <Text style={styles.cardName}>
-          {person.name}, {displayAge(person)}
-          {person.lastSeen ? '' : '  '}
-          <Text style={styles.onlineDot}> ●</Text>
+        <Text style={styles.cardName} numberOfLines={1}>
+          {person.name}{age ? `, ${age}` : ''}
+          {online ? <Text style={styles.onlineDot}>  ●</Text> : null}
         </Text>
         <Text style={styles.cardCity}>
-          {person.city ?? 'Рядом'}  ★ {person.rating ?? '—'}
+          {person.city ?? 'Рядом'}
+          {person.rating != null ? `   ★  ${person.rating}` : ''}
         </Text>
         <View style={styles.tagRow}>
-          {person.ferotags?.slice(0, 3).map((tag) => (
-            <View key={tag} style={styles.glassChip}>
-              <Text style={styles.glassChipText}>{tag}</Text>
-            </View>
+          {chips.map((tag) => (
+            <TagChip key={tag.key || tag.label} tag={tag} glass />
           ))}
         </View>
       </View>
@@ -109,12 +105,14 @@ function ActionDock({
       <Pressable accessibilityLabel="Пропустить" onPress={onSkip} style={styles.dockButton}>
         <Text style={styles.dockSkip}>✕</Text>
       </Pressable>
-      <Pressable accessibilityLabel="Пригласить" onPress={onGo} style={[styles.dockGo, gradient]}>
-        <Text style={styles.dockGoHeart}>♥</Text>
+      <Pressable accessibilityLabel="Пригласить" onPress={onGo} style={styles.dockGo}>
+        <HeartMark size={42} />
         <Text style={styles.dockGoText}>GO</Text>
       </Pressable>
       <Pressable accessibilityLabel="В симпатии" onPress={onFavorite} style={styles.dockButton}>
-        <Text style={[styles.dockHeart, favorite && styles.dockHeartActive]}>{favorite ? '♥♥' : '♡♡'}</Text>
+        <Text style={[styles.dockHeart, favorite && styles.dockHeartActive]}>
+          {favorite ? '♥♥' : '♡♡'}
+        </Text>
       </Pressable>
     </View>
   );
@@ -135,13 +133,18 @@ function InviteSheet({
   busy: boolean;
   error: string;
 }) {
+  const tags = (person.ferotags?.length ? person.ferotags : FEROTAG_OPTIONS.map((tag) => tag.key)).map(formatTag);
   const [expense, setExpense] = useState<ExpenseType>('I_PAY');
-  const [ferotag, setFerotag] = useState(person.ferotags?.[0] ?? 'Первое свидание');
+  const [ferotag, setFerotag] = useState(tags[0]?.key ?? FEROTAG_OPTIONS[0]!.key);
   const [comment, setComment] = useState('');
-  const tags = person.ferotags?.length ? person.ferotags : ['Первое свидание', 'Наедине', 'Между строк'];
+
+  useEffect(() => {
+    setFerotag(tags[0]?.key ?? FEROTAG_OPTIONS[0]!.key);
+    setComment('');
+  }, [person.id]);
 
   return (
-    <Sheet visible={visible} title={`Пригласить ${person.name}`} onClose={onClose}>
+    <Sheet visible={visible} title="Пригласить" onClose={onClose}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.inviteBody}>
         <Text style={styles.sectionLabel}>Участие в расходах</Text>
         <View style={styles.expenseRow}>
@@ -151,6 +154,7 @@ function InviteSheet({
               onPress={() => setExpense(option.type)}
               style={[styles.expenseCard, expense === option.type && styles.expenseCardActive]}
             >
+              <Text style={styles.expenseIcon}>{option.icon}</Text>
               <Text style={[styles.expenseTitle, expense === option.type && styles.expenseTitleActive]}>
                 {option.title}
               </Text>
@@ -163,7 +167,12 @@ function InviteSheet({
         <Text style={styles.sectionLabel}>Чем займёмся?</Text>
         <View style={styles.tagRow}>
           {tags.map((tag) => (
-            <Chip key={tag} label={tag} active={ferotag === tag} onPress={() => setFerotag(tag)} />
+            <Chip
+              key={tag.key}
+              label={tag.key}
+              active={ferotag === tag.key}
+              onPress={() => setFerotag(tag.key)}
+            />
           ))}
         </View>
         <Field
@@ -237,12 +246,11 @@ function FilterSheet({
 }
 
 export function DiscoveryScreen() {
-  const { width } = useWindowDimensions();
-  const desktop = width >= 860;
   const demoMode = useSessionStore((state) => state.demoMode);
   const [remotePeople, setRemotePeople] = useState<FeromeetUser[]>();
+  const [loading, setLoading] = useState(!demoMode);
   const [error, setError] = useState('');
-  const source = remotePeople?.length ? remotePeople : demoMode ? people : remotePeople ?? [];
+  const source = demoMode ? people : remotePeople ?? [];
   const [index, setIndex] = useState(0);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -257,19 +265,21 @@ export function DiscoveryScreen() {
   });
   const person = source[index];
   const drag = useRef(new Animated.ValueXY()).current;
-  const cardWidth = Math.min(width - 32, desktop ? 420 : width - 24);
-  const cardHeight = desktop ? 520 : Math.min(width * 1.28, 620);
 
   const loadUsers = () => {
     if (demoMode) return;
+    setLoading(true);
     discoveryApi
       .getUsers()
       .then((users) => {
-        if (Array.isArray(users)) setRemotePeople(users);
+        setRemotePeople(Array.isArray(users) ? users : []);
+        setError('');
       })
       .catch((requestError) => {
+        setRemotePeople([]);
         setError(requestError instanceof ApiError ? requestError.message : 'Не удалось загрузить анкеты');
-      });
+      })
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
@@ -352,7 +362,7 @@ export function DiscoveryScreen() {
   );
 
   useEffect(() => {
-    if (!desktop || typeof window === 'undefined') return undefined;
+    if (typeof window === 'undefined') return undefined;
     const onKey = (event: KeyboardEvent) => {
       if (inviteOpen || filterOpen) {
         if (event.key === 'Escape') {
@@ -362,98 +372,36 @@ export function DiscoveryScreen() {
         return;
       }
       if (event.key === 'ArrowLeft') skip();
-      if (event.key === 'ArrowRight') setIndex((value) => Math.min(value + 1, Math.max(source.length - 1, 0)));
+      if (event.key === 'ArrowRight') setInviteOpen(true);
       if (event.key === 'Enter') setInviteOpen(true);
       if (event.key.toLowerCase() === 'f') toggleFavorite();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [desktop, inviteOpen, filterOpen, person, source.length]);
-
-  if (!person) {
-    return (
-      <ScreenState
-        kind={error ? 'error' : 'empty'}
-        title={error ? 'Не удалось загрузить' : 'Вы всё посмотрели'}
-        message={error || 'Новые анкеты появятся здесь совсем скоро.'}
-        action={error ? loadUsers : undefined}
-      />
-    );
-  }
-
-  const photos = userPhotos(person);
-  const nextPhoto = () => setPhotoIndex((value) => (photos.length ? (value + 1) % photos.length : 0));
+  }, [inviteOpen, filterOpen, person]);
 
   return (
     <View style={styles.screen}>
-      <View style={styles.header}>
-        <BrandMark />
-        <Pressable accessibilityLabel="Фильтры" onPress={() => setFilterOpen(true)} style={styles.filterButton}>
-          <Text style={styles.filterIcon}>☰</Text>
-        </Pressable>
-      </View>
-
-      {desktop ? (
-        <ScrollView contentContainerStyle={styles.desktop} showsVerticalScrollIndicator={false}>
-          <View style={styles.strip}>
-            <Pressable onPress={skip} style={styles.stripArrow}><Text style={styles.stripArrowText}>‹</Text></Pressable>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stripList}>
-              {source.map((item, itemIndex) => (
-                <Pressable
-                  key={item.id}
-                  onPress={() => setIndex(itemIndex)}
-                  style={[styles.stripCard, itemIndex === index && styles.stripCardActive]}
-                >
-                  {photoUrl(item.mainSmallPhotoFilename || item.mainPhotoFilename) ? (
-                    <Image
-                      source={{ uri: photoUrl(item.mainSmallPhotoFilename || item.mainPhotoFilename) }}
-                      style={styles.stripImage}
-                    />
-                  ) : (
-                    <Avatar name={item.name} size={72} />
-                  )}
-                  <Text style={styles.stripName}>{item.name}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            <Pressable
-              onPress={() => setIndex((value) => Math.min(value + 1, source.length - 1))}
-              style={styles.stripArrow}
-            >
-              <Text style={styles.stripArrowText}>›</Text>
-            </Pressable>
-          </View>
-          <View style={styles.desktopDetail}>
-            <DiscoveryCard
-              person={person}
-              width={cardWidth}
-              height={cardHeight}
-              photoIndex={photoIndex}
-              onNextPhoto={nextPhoto}
-            />
-            <View style={styles.detailCopy}>
-              <Text style={styles.about}>{person.textAbout || 'Пока без описания'}</Text>
-              <ActionDock
-                favorite={person.isFavorite}
-                onSkip={skip}
-                onGo={() => setInviteOpen(true)}
-                onFavorite={toggleFavorite}
-              />
-            </View>
-          </View>
-        </ScrollView>
+      <AppHeader onFilter={() => setFilterOpen(true)} />
+      {loading ? (
+        <ScreenState kind="loading" title="Загружаем анкеты" message="Это займёт секунду" />
+      ) : !person ? (
+        <ScreenState
+          kind={error ? 'error' : 'empty'}
+          title={error ? 'Не удалось загрузить' : 'Вы всё посмотрели'}
+          message={error || 'Новые анкеты появятся здесь совсем скоро.'}
+          action={error ? loadUsers : undefined}
+        />
       ) : (
-        <View style={styles.mobile}>
-          <Animated.View
-            style={{ transform: drag.getTranslateTransform() }}
-            {...pan.panHandlers}
-          >
+        <View style={styles.stack}>
+          <Animated.View style={[styles.cardWrap, { transform: drag.getTranslateTransform() }]} {...pan.panHandlers}>
             <DiscoveryCard
               person={person}
-              width={cardWidth}
-              height={cardHeight}
               photoIndex={photoIndex}
-              onNextPhoto={nextPhoto}
+              onNextPhoto={() => {
+                const photos = userPhotos(person);
+                setPhotoIndex((value) => (photos.length ? (value + 1) % photos.length : 0));
+              }}
             />
           </Animated.View>
           <ActionDock
@@ -465,14 +413,16 @@ export function DiscoveryScreen() {
         </View>
       )}
 
-      <InviteSheet
-        person={person}
-        visible={inviteOpen}
-        busy={busy}
-        error={inviteError}
-        onClose={() => setInviteOpen(false)}
-        onInvite={(expense, ferotag, comment) => void invite(expense, ferotag, comment)}
-      />
+      {person && (
+        <InviteSheet
+          person={person}
+          visible={inviteOpen}
+          busy={busy}
+          error={inviteError}
+          onClose={() => setInviteOpen(false)}
+          onInvite={(expense, ferotag, comment) => void invite(expense, ferotag, comment)}
+        />
+      )}
       <FilterSheet
         visible={filterOpen}
         preference={preference}
@@ -489,29 +439,31 @@ export function DiscoveryScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  header: {
-    minHeight: 64,
-    paddingHorizontal: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  filterButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
-  filterIcon: { color: colors.berry, fontSize: 22, fontWeight: '900' },
-  mobile: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, paddingBottom: 12 },
+  stack: { flex: 1, paddingHorizontal: 12, paddingBottom: 8 },
+  cardWrap: { flex: 1 },
   card: {
-    borderRadius: 28,
+    flex: 1,
+    borderRadius: radius.lg,
     overflow: 'hidden',
     backgroundColor: '#111',
     ...shadow,
   },
-  cardImage: { width: '100%', height: '100%' },
-  cardFallback: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#2A211C' },
+  cardImage: { ...StyleSheet.absoluteFill },
+  cardFallback: { backgroundColor: '#2A211C' },
   cardScrim: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'transparent',
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 220,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    ...Platform.select({
+      web: {
+        backgroundColor: 'transparent',
+        backgroundImage: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.72) 100%)',
+      },
+      default: {},
+    }),
   },
   storyRow: {
     position: 'absolute',
@@ -532,79 +484,71 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
-  readyText: { color: '#fff', fontWeight: '800', fontSize: 12 },
-  cardMeta: { position: 'absolute', left: 16, right: 16, bottom: 18, gap: 6 },
-  cardName: { color: '#fff', fontSize: 28, fontWeight: '900' },
-  onlineDot: { color: colors.green, fontSize: 16 },
-  cardCity: { color: '#fff', fontWeight: '700' },
+  readyText: { color: '#fff', fontWeight: '700', fontSize: 12, fontFamily },
+  cardMeta: { position: 'absolute', left: 16, right: 16, bottom: 78, gap: 6 },
+  cardName: { color: '#fff', fontSize: 26, fontWeight: '800', fontFamily },
+  onlineDot: { color: colors.green, fontSize: 14 },
+  cardCity: { color: '#fff', fontWeight: '600', fontFamily },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  glassChip: {
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    borderRadius: radius.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+  dock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 22,
   },
-  glassChipText: { color: '#fff', fontWeight: '700', fontSize: 12 },
-  dock: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 22 },
   dockButton: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     ...shadow,
   },
-  dockSkip: { color: '#3B82F6', fontSize: 26, fontWeight: '900' },
-  dockHeart: { color: colors.berry, fontSize: 18, fontWeight: '900' },
+  dockSkip: { color: '#3B82F6', fontSize: 22, fontWeight: '800' },
+  dockHeart: { color: colors.berry, fontSize: 18, fontWeight: '800' },
   dockHeartActive: { color: colors.berryDark },
   dockGo: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
+    width: 78,
+    height: 78,
+    borderRadius: 39,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.surface,
     ...shadow,
   },
-  dockGoHeart: { color: '#fff', fontSize: 22, lineHeight: 24 },
-  dockGoText: { color: '#fff', fontWeight: '900', letterSpacing: 1 },
-  desktop: { padding: spacing.lg, gap: spacing.lg },
-  strip: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  stripList: { gap: spacing.sm, paddingVertical: 4 },
-  stripCard: {
-    width: 108,
-    alignItems: 'center',
-    gap: 6,
-    padding: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.line,
+  dockGoText: {
+    position: 'absolute',
+    color: '#fff',
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    fontSize: 11,
+    fontFamily,
+    top: 28,
   },
-  stripCardActive: { borderColor: colors.berry, backgroundColor: colors.soft },
-  stripImage: { width: 72, height: 72, borderRadius: 36 },
-  stripName: { color: colors.ink, fontWeight: '700', fontSize: 12 },
-  stripArrow: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  stripArrowText: { fontSize: 28, color: colors.berry, fontWeight: '900' },
-  desktopDetail: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xl, alignItems: 'center' },
-  detailCopy: { flex: 1, minWidth: 280, gap: spacing.lg },
-  about: { color: colors.ink, fontSize: 18, lineHeight: 26 },
   inviteBody: { gap: spacing.md, paddingBottom: spacing.md },
-  sectionLabel: { color: colors.ink, fontWeight: '800' },
+  sectionLabel: { color: colors.ink, fontWeight: '700', fontFamily },
   expenseRow: { flexDirection: 'row', gap: 8 },
   expenseCard: {
     flex: 1,
-    minHeight: 88,
-    borderRadius: 16,
+    minHeight: 96,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.line,
-    padding: 10,
+    padding: 8,
     justifyContent: 'center',
+    alignItems: 'center',
     gap: 4,
   },
   expenseCardActive: { ...gradient, borderColor: colors.berry },
-  expenseTitle: { color: colors.ink, fontWeight: '800', fontSize: 13 },
-  expenseSub: { color: colors.muted, fontSize: 11 },
+  expenseIcon: { fontSize: 18 },
+  expenseTitle: { color: colors.ink, fontWeight: '700', fontSize: 12, textAlign: 'center', fontFamily },
+  expenseSub: { color: colors.muted, fontSize: 11, textAlign: 'center', fontFamily },
   expenseTitleActive: { color: '#fff' },
-  counter: { color: colors.muted, textAlign: 'right', fontSize: 12, marginTop: -8 },
-  error: { color: colors.danger, fontSize: 13 },
+  counter: { color: colors.muted, textAlign: 'right', fontSize: 12, marginTop: -8, fontFamily },
+  error: { color: colors.danger, fontSize: 13, fontFamily },
 });

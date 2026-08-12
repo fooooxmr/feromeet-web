@@ -1,12 +1,26 @@
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { photoUrl, type Meet } from '../../domain/models';
+import { formatTagLabel } from '../../domain/tags';
 import { meets } from '../demo/fixtures';
 import { Avatar, Button, Card, Chip, Page, ScreenState } from '../../components/ui';
-import { colors, radius, spacing } from '../../theme/tokens';
+import { colors, fontFamily, spacing } from '../../theme/tokens';
 import { meetsApi } from '../../api/endpoints';
 import { useSessionStore } from '../../state/session';
+
+function stageMeta(stage: Meet['stages'][number], index: number) {
+  if (stage.dateTime) {
+    return new Date(stage.dateTime).toLocaleString('ru', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+  if (stage.completed) return 'Готово';
+  return stage.status || `Шаг ${index + 1}`;
+}
 
 export function MeetTimeline({ meet }: { meet: Meet }) {
   return (
@@ -24,12 +38,10 @@ export function MeetTimeline({ meet }: { meet: Meet }) {
             )}
           </View>
           <View style={styles.stageCopy}>
-            <Text style={[styles.stageTitle, !stage.completed && styles.stageTitleMuted]}>
-              {stage.title}
+            <Text style={[styles.stageTitle, !stage.completed && styles.stageTitleMuted]} numberOfLines={2}>
+              {stage.title || `Этап ${index + 1}`}
             </Text>
-            <Text style={styles.stageMeta}>
-              {stage.completed ? 'Готово' : index === 2 ? 'Сегодня, 19:30' : 'После встречи'}
-            </Text>
+            <Text style={styles.stageMeta}>{stageMeta(stage, index)}</Text>
           </View>
         </View>
       ))}
@@ -43,6 +55,7 @@ export function MeetDetail({ meet }: { meet: Meet }) {
   const active = meet.status !== 'PASSED';
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const tag = formatTagLabel(meet.ferotag);
 
   const run = async (action: () => Promise<void>, success: string) => {
     setBusy(true);
@@ -81,10 +94,12 @@ export function MeetDetail({ meet }: { meet: Meet }) {
   return (
     <Card>
       <View style={styles.personRow}>
-        <Avatar name={meet.user.name} size={62} uri={photoUrl(meet.user.mainSmallPhotoFilename)} />
+        <Avatar name={meet.user.name} size={52} uri={photoUrl(meet.user.mainSmallPhotoFilename)} />
         <View style={styles.personCopy}>
-          <Text style={styles.personName}>Встреча с {meet.user.name}</Text>
-          <Text style={styles.personMeta}>{meet.ferotag} · {meet.price} BYN</Text>
+          <Text style={styles.personName} numberOfLines={1}>{meet.user.name}</Text>
+          <Text style={styles.personMeta} numberOfLines={1}>
+            {tag}{meet.price ? ` · ${meet.price} BYN` : ''}
+          </Text>
         </View>
         <Chip label={active ? 'В процессе' : 'Завершена'} active={active} />
       </View>
@@ -94,9 +109,7 @@ export function MeetDetail({ meet }: { meet: Meet }) {
       <View style={styles.detailActions}>
         {active ? (
           <>
-            <View style={styles.primaryAction}>
-              <Button label="Открыть чат" onPress={() => router.push(`/chat/${meet.chatId}`)} />
-            </View>
+            <Button label="Открыть чат" onPress={() => router.push(`/chat/${meet.chatId}`)} />
             <Button
               disabled={busy}
               label={busy ? 'Подтверждаем…' : 'Подтвердить этап'}
@@ -109,13 +122,6 @@ export function MeetDetail({ meet }: { meet: Meet }) {
               variant="ghost"
               onPress={() => void run(() => meetsApi.cancel(meet.meetId), 'Встреча отменена')}
             />
-            <Button
-              disabled={busy}
-              label="Прочитано"
-              variant="ghost"
-              onPress={() => void run(() => meetsApi.markAsRead(meet.meetId), 'Обновления скрыты')}
-            />
-            <Button label="Детали" variant="secondary" onPress={() => router.push(`/meet/${meet.meetId}`)} />
           </>
         ) : (
           <>
@@ -149,28 +155,31 @@ export function MeetDetail({ meet }: { meet: Meet }) {
 }
 
 export function MeetsScreen() {
-  const { width } = useWindowDimensions();
-  const desktop = width >= 1040;
   const demoMode = useSessionStore((state) => state.demoMode);
   const [tab, setTab] = useState<'active' | 'passed'>('active');
   const [availableMeets, setAvailableMeets] = useState<Meet[]>(demoMode ? meets : []);
+  const [loading, setLoading] = useState(!demoMode);
   const [error, setError] = useState('');
   const filtered = availableMeets.filter((meet) => (tab === 'active' ? meet.status !== 'PASSED' : meet.status === 'PASSED'));
-  const [selectedId, setSelectedId] = useState(demoMode ? meets[0]?.meetId ?? 0 : 0);
-  const selected = availableMeets.find((meet) => meet.meetId === selectedId) ?? filtered[0];
 
   useEffect(() => {
     if (demoMode) return;
     let active = true;
+    setLoading(true);
     Promise.all([meetsApi.getActive(), meetsApi.getPassed()])
       .then(([current, passed]) => {
         if (!active) return;
-        const next = [...(Array.isArray(current) ? current : []), ...(Array.isArray(passed) ? passed : [])];
-        setAvailableMeets(next);
+        setAvailableMeets([
+          ...(Array.isArray(current) ? current : []),
+          ...(Array.isArray(passed) ? passed : []),
+        ]);
         setError('');
       })
       .catch(() => {
         if (active) setError('Не удалось загрузить встречи');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
     return () => {
       active = false;
@@ -187,7 +196,9 @@ export function MeetsScreen() {
         </View>
       }
     >
-      {error ? (
+      {loading ? (
+        <ScreenState kind="loading" title="Загружаем встречи" message="Это займёт секунду" />
+      ) : error ? (
         <ScreenState kind="error" title="Ошибка" message={error} />
       ) : filtered.length === 0 ? (
         <ScreenState
@@ -195,28 +206,6 @@ export function MeetsScreen() {
           title={tab === 'active' ? 'Пока нет встреч' : 'Прошедших встреч нет'}
           message="Приглашения и подтверждённые свидания появятся здесь."
         />
-      ) : desktop ? (
-        <View style={styles.split}>
-          <View style={styles.meetList}>
-            {filtered.map((meet) => (
-              <Pressable
-                key={meet.meetId}
-                onPress={() => setSelectedId(meet.meetId)}
-                style={[styles.meetRow, selected?.meetId === meet.meetId && styles.meetRowActive]}
-              >
-                <Avatar name={meet.user.name} uri={photoUrl(meet.user.mainSmallPhotoFilename)} />
-                <View style={styles.personCopy}>
-                  <Text style={styles.rowTitle}>{meet.user.name}</Text>
-                  <Text style={styles.rowMeta}>{meet.ferotag}</Text>
-                </View>
-                {meet.countUnreadMessages > 0 && (
-                  <Text style={styles.badge}>{meet.countUnreadMessages}</Text>
-                )}
-              </Pressable>
-            ))}
-          </View>
-          <View style={styles.detail}>{selected && <MeetDetail meet={selected} />}</View>
-        </View>
       ) : (
         <View style={styles.mobileCards}>
           {filtered.map((meet) => <MeetDetail key={meet.meetId} meet={meet} />)}
@@ -227,39 +216,14 @@ export function MeetsScreen() {
 }
 
 const styles = StyleSheet.create({
-  tabs: { flexDirection: 'row', gap: spacing.xs },
-  split: { flexDirection: 'row', gap: spacing.lg, alignItems: 'flex-start' },
-  meetList: { width: 310, gap: spacing.sm },
-  meetRow: {
-    padding: spacing.md,
-    borderRadius: radius.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  meetRowActive: { borderColor: colors.berry, backgroundColor: colors.blush },
+  tabs: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, maxWidth: 200 },
   personRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  personCopy: { flex: 1 },
-  personName: { color: colors.ink, fontSize: 19, fontWeight: '900' },
-  personMeta: { color: colors.muted, marginTop: 4 },
-  rowTitle: { color: colors.ink, fontWeight: '800' },
-  rowMeta: { color: colors.muted, fontSize: 12, marginTop: 3 },
-  badge: {
-    minWidth: 24,
-    height: 24,
-    borderRadius: 12,
-    textAlign: 'center',
-    lineHeight: 24,
-    color: colors.surface,
-    backgroundColor: colors.berry,
-    fontWeight: '800',
-  },
+  personCopy: { flex: 1, minWidth: 0 },
+  personName: { color: colors.ink, fontSize: 17, fontWeight: '700', fontFamily },
+  personMeta: { color: colors.muted, marginTop: 4, fontFamily },
   divider: { height: 1, backgroundColor: colors.line, marginVertical: spacing.lg },
   timeline: { gap: 0 },
-  stage: { minHeight: 65, flexDirection: 'row', gap: spacing.md },
+  stage: { minHeight: 56, flexDirection: 'row', gap: spacing.md },
   stageRail: { width: 28, alignItems: 'center' },
   stageDot: {
     width: 28,
@@ -272,17 +236,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   stageDone: { borderColor: colors.green, backgroundColor: colors.green },
-  stageCheck: { color: colors.muted, fontSize: 11, fontWeight: '900' },
+  stageCheck: { color: colors.muted, fontSize: 11, fontWeight: '800' },
   stageCheckDone: { color: colors.surface },
   stageLine: { width: 2, flex: 1, backgroundColor: colors.line },
   stageLineDone: { backgroundColor: colors.green },
-  stageCopy: { flex: 1, paddingTop: 3 },
-  stageTitle: { color: colors.ink, fontWeight: '800' },
+  stageCopy: { flex: 1, paddingTop: 3, minWidth: 0 },
+  stageTitle: { color: colors.ink, fontWeight: '700', fontFamily },
   stageTitleMuted: { color: colors.muted },
-  stageMeta: { color: colors.muted, fontSize: 12, marginTop: 4 },
-  detailActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
-  primaryAction: { flex: 1 },
-  detail: { flex: 1 },
+  stageMeta: { color: colors.muted, fontSize: 12, marginTop: 4, fontFamily },
+  detailActions: { flexDirection: 'column', gap: spacing.sm, marginTop: spacing.md },
   mobileCards: { gap: spacing.md },
-  feedback: { color: colors.green, fontSize: 12, fontWeight: '700', marginTop: spacing.sm },
+  feedback: { color: colors.green, fontSize: 12, fontWeight: '700', marginTop: spacing.sm, fontFamily },
 });

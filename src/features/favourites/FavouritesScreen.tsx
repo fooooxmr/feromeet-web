@@ -16,6 +16,7 @@ export function FavouritesScreen() {
   const [items, setItems] = useState<ReactionUser[]>(
     demoMode ? people.map((person) => ({ ...person, reactionType: person.isFavorite ? 'FAVORITE' : 'LIKE' })) : [],
   );
+  const [loading, setLoading] = useState(!demoMode);
   const [error, setError] = useState('');
   const filtered = items.filter((item) =>
     tab === 'FAVORITE'
@@ -25,14 +26,17 @@ export function FavouritesScreen() {
 
   useEffect(() => {
     if (demoMode) return;
+    setLoading(true);
     discoveryApi
       .getFavorites()
       .then((users) => {
         if (Array.isArray(users)) setItems(users);
+        setError('');
       })
       .catch((requestError) => {
         setError(requestError instanceof ApiError ? requestError.message : 'Не удалось загрузить симпатии');
-      });
+      })
+      .finally(() => setLoading(false));
   }, [demoMode]);
 
   return (
@@ -41,7 +45,9 @@ export function FavouritesScreen() {
         <Chip label="Лайки" active={tab === 'LIKE'} onPress={() => setTab('LIKE')} />
         <Chip label="Избранное" active={tab === 'FAVORITE'} onPress={() => setTab('FAVORITE')} />
       </View>
-      {error ? (
+      {loading ? (
+        <ScreenState kind="loading" title="Загружаем симпатии" message="Это займёт секунду" />
+      ) : error ? (
         <ScreenState kind="error" title="Ошибка" message={error} />
       ) : filtered.length === 0 ? (
         <ScreenState

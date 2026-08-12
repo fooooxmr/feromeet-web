@@ -14,13 +14,13 @@ test('demo covers discovery, invite, meets and profile', async ({ page }) => {
   await expect(page).toHaveURL(/\/swipes$/);
   await expect(page.getByLabel('Пригласить')).toBeVisible();
   await page.getByLabel('Пригласить').click();
-  await expect(page.getByText(/Пригласить Лена/)).toBeVisible();
+  await expect(page.getByText('Пригласить', { exact: true })).toBeVisible();
   await expect(page.getByText('Я угощаю')).toBeVisible();
   await expect(page.getByText('Бюджет, BYN')).toHaveCount(0);
   await page.getByLabel('Закрыть').click();
 
   await page.getByText('Встречи', { exact: true }).click();
-  await expect(page.getByText(/Встреча с/).first()).toBeVisible();
+  await expect(page.getByText('Лена').first()).toBeVisible();
 
   await page.getByText('Профиль', { exact: true }).click();
   await expect(page.getByText('Редактировать')).toBeVisible();

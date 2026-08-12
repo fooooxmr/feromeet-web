@@ -9,7 +9,8 @@ export const people: FeromeetUser[] = [
     height: 168,
     rating: 4.9,
     readyToGo: 86,
-    ferotags: ['Выставки', 'Спешелти-кофе', 'Долгие прогулки'],
+    ferotags: ['ferotag_first_date', 'ferotag_between_the_lines', 'ferotag_a_night_out'],
+    infotagCategories: [{ name: 'interests', infotags: ['inter_music', 'inter_bake', 'inter_jogg'] }],
     textAbout:
       'Ищу человека, с которым можно потеряться в новом городе и спорить о лучшей пасте.',
     isFavorite: true,
@@ -22,7 +23,7 @@ export const people: FeromeetUser[] = [
     height: 172,
     rating: 4.8,
     readyToGo: 71,
-    ferotags: ['Джаз', 'Архитектура', 'Завтраки'],
+    ferotags: ['ferotag_home_gathering', 'ferotag_like_a_breeze'],
     textAbout: 'Коллекционирую красивые маршруты и истории людей.',
   },
   {
@@ -33,7 +34,7 @@ export const people: FeromeetUser[] = [
     height: 165,
     rating: 4.7,
     readyToGo: 92,
-    ferotags: ['Театр', 'Керамика', 'Танцы'],
+    ferotags: ['ferotag_alone_with_tarantino', 'ferotag_guest_at_the_stove'],
     textAbout: 'За спонтанность, честность и свидания без сценария.',
     isFavorite: true,
   },
@@ -51,7 +52,7 @@ export const meets: Meet[] = [
     meetId: 1042,
     chatId: 'chat-lena',
     price: 120,
-    ferotag: 'Вечер в центре',
+    ferotag: 'ferotag_first_date',
     expenseType: 'HALF',
     status: 'PLANNING',
     isYouHunter: true,
@@ -67,7 +68,7 @@ export const meets: Meet[] = [
     meetId: 1031,
     chatId: 'chat-sofia',
     price: 80,
-    ferotag: 'Завтрак',
+    ferotag: 'ferotag_home_gathering',
     expenseType: 'HUNTER',
     status: 'PASSED',
     isYouHunter: false,
@@ -81,6 +82,18 @@ export const meets: Meet[] = [
     user: people[2]!,
   },
 ];
+
+export const demoMe: FeromeetUser = {
+  id: 'me',
+  name: 'Артём',
+  city: 'Гродно',
+  birthday: '1994-03-18',
+  height: 174,
+  readyToGo: 64,
+  ferotags: ['ferotag_first_date', 'ferotag_home_gathering'],
+  infotagCategories: [{ name: 'interests', infotags: ['inter_music', 'inter_jogg'] }],
+  textAbout: 'Листай дальше, не твоего поля ягода.',
+};
 
 export const messages: ChatMessage[] = [
   {
