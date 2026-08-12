@@ -34,11 +34,27 @@ function safePayload(body: string): unknown {
   }
 }
 
+function sockJsFrames(payload: string): string[] {
+  if (payload === 'o' || payload === 'h' || payload.startsWith('c[')) return [];
+  try {
+    if (payload.startsWith('a[')) return JSON.parse(payload.slice(1)) as string[];
+    if (payload.startsWith('[')) return JSON.parse(payload) as string[];
+  } catch {
+    return [payload];
+  }
+  return [payload];
+}
+
 export class FeromeetChatSocket {
   private socket?: WebSocket;
   private subscriptions: Subscription[] = [];
   private nextSubscriptionId = 1;
   private connected = false;
+  private closedByUser = false;
+  private reconnectTimer?: ReturnType<typeof setTimeout>;
+  private heartbeatTimer?: ReturnType<typeof setInterval>;
+  private attempts = 0;
+  private generation = 0;
 
   constructor(
     private readonly accessToken: string,
@@ -47,14 +63,24 @@ export class FeromeetChatSocket {
   ) {}
 
   async connect() {
+    if (this.closedByUser) return;
+    const generation = ++this.generation;
+    this.clearReconnect();
+    this.teardownSocket();
     this.callbacks.onState?.('connecting');
     try {
       const wsBase =
         process.env.EXPO_PUBLIC_WS_URL?.replace(/\/$/, '') || 'wss://feromeet.com/ws-chat';
-      const info = await apiRequest<{ entropy?: number }>('/ws-chat/info');
-      const serverId = String(
-        Math.abs((info.entropy || Date.now()) % 1000),
-      ).padStart(3, '0');
+      let serverId = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
+      try {
+        const info = await apiRequest<{ entropy?: number }>('/ws-chat/info', { auth: false });
+        if (info?.entropy != null) {
+          serverId = String(Math.abs(info.entropy % 1000)).padStart(3, '0');
+        }
+      } catch {
+        /* SockJS info is optional; still open the websocket. */
+      }
+      if (this.closedByUser || generation !== this.generation) return;
       const url = `${wsBase}/${serverId}/${sessionId()}/websocket`;
       this.socket = new WebSocket(url);
       this.socket.onmessage = ({ data }) => this.handleSockJs(String(data));
@@ -65,13 +91,16 @@ export class FeromeetChatSocket {
       };
       this.socket.onclose = () => {
         this.connected = false;
+        this.stopHeartbeat();
         this.callbacks.onState?.('disconnected');
+        this.scheduleReconnect();
       };
     } catch (error) {
       this.callbacks.onState?.('error');
       this.callbacks.onError?.(
         error instanceof Error ? error : new Error('Realtime chat failed'),
       );
+      this.scheduleReconnect();
     }
   }
 
@@ -82,12 +111,7 @@ export class FeromeetChatSocket {
       );
       return;
     }
-    if (payload === 'h' || payload.startsWith('c[')) return;
-
-    const frames: string[] = payload.startsWith('a[')
-      ? (JSON.parse(payload.slice(1)) as string[])
-      : [payload];
-    frames.forEach((frame) => this.handleStompFrame(frame));
+    sockJsFrames(payload).forEach((frame) => this.handleStompFrame(frame));
   }
 
   private handleStompFrame(frame: string) {
@@ -108,7 +132,9 @@ export class FeromeetChatSocket {
 
     if (command === 'CONNECTED') {
       this.connected = true;
+      this.attempts = 0;
       this.callbacks.onState?.('connected');
+      this.startHeartbeat();
       this.subscribe(
         `/user/queue/chat.${this.chatId}.messages`,
         (body) => {
@@ -149,8 +175,53 @@ export class FeromeetChatSocket {
     }
   }
 
+  private startHeartbeat() {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      if (this.socket?.readyState === WebSocket.OPEN) {
+        this.socket.send(JSON.stringify(['\n']));
+      }
+    }, 10000);
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = undefined;
+  }
+
+  private scheduleReconnect() {
+    if (this.closedByUser || this.reconnectTimer) return;
+    const delay = Math.min(1000 * 2 ** this.attempts, 15000);
+    this.attempts += 1;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
+      void this.connect();
+    }, delay);
+  }
+
+  private clearReconnect() {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
+  }
+
+  private teardownSocket() {
+    this.stopHeartbeat();
+    this.connected = false;
+    this.subscriptions = [];
+    this.nextSubscriptionId = 1;
+    if (this.socket) {
+      this.socket.onclose = null;
+      this.socket.onerror = null;
+      this.socket.onmessage = null;
+      if (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING) {
+        this.socket.close(1000, 'Normal closure');
+      }
+      this.socket = undefined;
+    }
+  }
+
   sendMessage(recipientId: string, content: string) {
-    if (!this.connected) return false;
+    if (!this.connected || !recipientId) return false;
     this.sendFrame(
       `SEND\ndestination:/app/chat/send\ncontent-type:application/json\n\n${JSON.stringify(
         { recipientId, content, chatId: this.chatId },
@@ -160,7 +231,7 @@ export class FeromeetChatSocket {
   }
 
   sendTyping(recipientId: string, isTyping: boolean) {
-    if (!this.connected) return;
+    if (!this.connected || !recipientId) return;
     this.sendFrame(
       `SEND\ndestination:/app/chat/typing\ncontent-type:application/json\n\n${JSON.stringify(
         { recipientId, isTyping, chatId: this.chatId },
@@ -178,9 +249,10 @@ export class FeromeetChatSocket {
   }
 
   disconnect() {
+    this.closedByUser = true;
+    this.generation += 1;
+    this.clearReconnect();
     if (this.connected) this.sendFrame('DISCONNECT\n\n\u0000');
-    this.socket?.close(1000, 'Normal closure');
-    this.connected = false;
-    this.subscriptions = [];
+    this.teardownSocket();
   }
 }

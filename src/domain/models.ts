@@ -127,6 +127,29 @@ export function photoUrl(filename?: string): string | undefined {
   return filename ? `${PHOTO_BASE_URL}${encodeURIComponent(filename)}` : undefined;
 }
 
+export function isUserOnline(lastSeen?: string | null) {
+  return lastSeen == null || String(lastSeen).trim() === '';
+}
+
+export function formatLastSeen(lastSeen?: string | null) {
+  if (isUserOnline(lastSeen)) return undefined;
+  const raw = String(lastSeen);
+  let date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    const numeric = Number(raw);
+    if (!Number.isFinite(numeric)) return undefined;
+    date = new Date(numeric > 1e12 ? numeric : numeric * 1000);
+  }
+  if (Number.isNaN(date.getTime())) return undefined;
+  const now = new Date();
+  const time = date.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+  if (date.toDateString() === now.toDateString()) return `был(а) в сети в ${time}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return `был(а) вчера в ${time}`;
+  return `был(а) ${date.toLocaleDateString('ru', { day: 'numeric', month: 'long' })}`;
+}
+
 export function ageFromBirthday(birthday?: string): number | undefined {
   if (!birthday) return undefined;
   const date = new Date(birthday);
@@ -285,13 +308,20 @@ export function normalizeMeet(raw: Meet | Record<string, unknown>): Meet {
   });
   const meetIdValue = record.meetId ?? record.id;
   const meetId = typeof meetIdValue === 'number' ? meetIdValue : Number(meetIdValue);
-  const user = (record.user ?? record.otherUser ?? record.partner) as Meet['user'];
+  const user = (record.user ?? record.otherUser ?? record.partner) as Meet['user'] | undefined;
+  const lastSeen =
+    timestamp(record.lastSeen) ||
+    timestamp(user?.lastSeen) ||
+    undefined;
   return {
     ...(raw as Meet),
     stages,
     chatId: scalarId(record.chatId ?? record.chat) || (raw as Meet).chatId,
     meetId: Number.isFinite(meetId) ? meetId : (raw as Meet).meetId,
-    user: user || (raw as Meet).user,
+    lastSeen,
+    user: user
+      ? { ...user, lastSeen: timestamp(user.lastSeen) || lastSeen }
+      : (raw as Meet).user,
   };
 }
 

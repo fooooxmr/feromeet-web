@@ -3,6 +3,8 @@ import { apiRequest, configureTokenStorage, queryString, API_BASE_URL } from './
 import {
   belarusLocalDigits,
   formatBelarusPhoneMask,
+  formatLastSeen,
+  isUserOnline,
   normalizeChatMessages,
   normalizePhone,
 } from '../domain/models';
@@ -10,6 +12,21 @@ import {
 afterEach(() => {
   vi.unstubAllGlobals();
   configureTokenStorage(() => ({}), () => undefined);
+});
+
+describe('formatLastSeen', () => {
+  it('treats a missing lastSeen as online', () => {
+    expect(isUserOnline(undefined)).toBe(true);
+    expect(isUserOnline(null)).toBe(true);
+    expect(isUserOnline('')).toBe(true);
+    expect(formatLastSeen(undefined)).toBeUndefined();
+  });
+
+  it('formats a timestamp from today', () => {
+    const now = new Date();
+    now.setHours(14, 5, 0, 0);
+    expect(formatLastSeen(now.toISOString())).toMatch(/^был\(а\) в сети в /);
+  });
 });
 
 describe('queryString', () => {

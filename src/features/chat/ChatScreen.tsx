@@ -10,7 +10,13 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { photoUrl, type ChatMessage, type FeromeetUser } from '../../domain/models';
+import {
+  formatLastSeen,
+  isUserOnline,
+  photoUrl,
+  type ChatMessage,
+  type FeromeetUser,
+} from '../../domain/models';
 import { messages as initialMessages } from '../demo/fixtures';
 import { Avatar, ScreenState } from '../../components/ui';
 import { colors, radius, spacing } from '../../theme/tokens';
@@ -22,6 +28,13 @@ import { useSessionStore } from '../../state/session';
 function asChatId(value: string | string[] | undefined) {
   const chatId = Array.isArray(value) ? value[0] : value;
   return chatId?.trim() || undefined;
+}
+
+function typingActive(payload: unknown): boolean {
+  if (typeof payload === 'boolean') return payload;
+  if (!payload || typeof payload !== 'object') return false;
+  const record = payload as Record<string, unknown>;
+  return Boolean(record.isTyping ?? record.typing);
 }
 
 function profileId(payload: unknown): string | undefined {
@@ -49,6 +62,7 @@ export function ChatScreen() {
   const [peerName, setPeerName] = useState(demoMode ? 'Лена' : 'Собеседник');
   const [peerPhoto, setPeerPhoto] = useState<string>();
   const [peerUserId, setPeerUserId] = useState(demoMode ? 'lena' : '');
+  const [peerLastSeen, setPeerLastSeen] = useState<string | undefined>();
   const [meetId, setMeetId] = useState<number>();
   const [typing, setTyping] = useState(false);
   const [loading, setLoading] = useState(!demoMode);
@@ -59,6 +73,8 @@ export function ChatScreen() {
   );
   const socketRef = useRef<FeromeetChatSocket | undefined>(undefined);
   const listRef = useRef<ScrollView>(null);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const typingSent = useRef(false);
 
   useEffect(() => {
     if (!chatId || !hydrated) return;
@@ -67,6 +83,7 @@ export function ChatScreen() {
       setMessages(initialMessages);
       setLoading(false);
       setHistoryError('');
+      setSocketState('connected');
       return () => {
         active = false;
       };
@@ -75,17 +92,6 @@ export function ChatScreen() {
 
     setLoading(true);
     setHistoryError('');
-
-    const loadHistory = (id: string) =>
-      chatApi.getHistory(id).catch((error) => {
-        const status = error instanceof ApiError ? error.status : 0;
-        if (status === 403 || status === 401) {
-          return new Promise((resolve) => setTimeout(resolve, 400)).then(() =>
-            chatApi.getHistory(id),
-          );
-        }
-        throw error;
-      });
 
     void (async () => {
       const [profile, activeMeets, passedMeets] = await Promise.all([
@@ -108,30 +114,10 @@ export function ChatScreen() {
         setRecipientId(String(user.id));
         setPeerUserId(String(user.id));
         setPeerPhoto(photoUrl(user.mainSmallPhotoFilename || user.mainPhotoFilename));
+        setPeerLastSeen(user.lastSeen || meet.lastSeen);
         void meetsApi.markAsRead(meet.meetId).catch(() => undefined);
       }
 
-      try {
-        const history = await loadHistory(resolvedChatId);
-        if (!active) return;
-        setMessages(history);
-        setHistoryError('');
-      } catch (error) {
-        if (!active) return;
-        setMessages([]);
-        const status = error instanceof ApiError ? error.status : 0;
-        setHistoryError(
-          status === 403 || status === 401
-            ? 'Не удалось загрузить переписку. Попробуйте ещё раз.'
-            : error instanceof ApiError
-              ? error.message
-              : 'Не удалось загрузить переписку',
-        );
-      } finally {
-        if (active) setLoading(false);
-      }
-
-      if (!active || !accessToken) return;
       setSocketState('connecting');
       const socket = new FeromeetChatSocket(accessToken, resolvedChatId, {
         onMessage: (message) => {
@@ -144,9 +130,7 @@ export function ChatScreen() {
           socket.markRead(message.id);
         },
         onTyping: (payload) => {
-          if (active && typeof payload === 'object' && payload) {
-            setTyping(Boolean((payload as { isTyping?: boolean }).isTyping));
-          }
+          if (active) setTyping(typingActive(payload));
         },
         onState: (state) => {
           if (!active) return;
@@ -161,14 +145,59 @@ export function ChatScreen() {
       });
       socketRef.current = socket;
       void socket.connect();
+
+      try {
+        const history = await chatApi.getHistory(resolvedChatId);
+        if (!active) return;
+        setMessages((current) => {
+          const merged = [...history];
+          current.forEach((item) => {
+            if (!merged.some((message) => message.id === item.id)) merged.push(item);
+          });
+          return merged.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        });
+        setHistoryError('');
+      } catch (error) {
+        if (!active) return;
+        const status = error instanceof ApiError ? error.status : 0;
+        setHistoryError(
+          status === 403 || status === 401
+            ? 'Не удалось загрузить переписку. Попробуйте ещё раз.'
+            : error instanceof ApiError
+              ? error.message
+              : 'Не удалось загрузить переписку',
+        );
+      } finally {
+        if (active) setLoading(false);
+      }
     })();
 
     return () => {
       active = false;
+      if (typingTimer.current) clearTimeout(typingTimer.current);
       socketRef.current?.disconnect();
       socketRef.current = undefined;
     };
   }, [accessToken, chatId, demoMode, hydrated, reloadKey]);
+
+  const reportTyping = (active: boolean) => {
+    if (!recipientId) return;
+    if (active) {
+      if (!typingSent.current) {
+        socketRef.current?.sendTyping(recipientId, true);
+        typingSent.current = true;
+      }
+      if (typingTimer.current) clearTimeout(typingTimer.current);
+      typingTimer.current = setTimeout(() => {
+        socketRef.current?.sendTyping(recipientId, false);
+        typingSent.current = false;
+      }, 2000);
+      return;
+    }
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    if (typingSent.current) socketRef.current?.sendTyping(recipientId, false);
+    typingSent.current = false;
+  };
 
   const send = () => {
     const content = draft.trim();
@@ -187,8 +216,19 @@ export function ChatScreen() {
       },
     ]);
     setDraft('');
-    socketRef.current?.sendTyping(recipientId, false);
+    reportTyping(false);
   };
+
+  const presenceText = typing
+    ? `${peerName} печатает…`
+    : socketState === 'connected'
+      ? isUserOnline(peerLastSeen)
+        ? '● онлайн'
+        : formatLastSeen(peerLastSeen) || '● онлайн'
+      : formatLastSeen(peerLastSeen) || 'напишите сообщение';
+  const presenceOnline = typing
+    ? false
+    : socketState === 'connected' && isUserOnline(peerLastSeen);
 
   return (
     <KeyboardAvoidingView
@@ -208,9 +248,7 @@ export function ChatScreen() {
         </Pressable>
         <View style={styles.headerCopy}>
           <Text style={styles.name}>{peerName}</Text>
-          <Text style={socketState === 'connected' ? styles.online : styles.preview}>
-            {socketState === 'connected' ? '● онлайн' : 'напишите сообщение'}
-          </Text>
+          <Text style={presenceOnline ? styles.online : styles.preview}>{presenceText}</Text>
         </View>
         <Pressable
           onPress={() => router.push(meetId ? `/meet/${meetId}` : '/meets')}
@@ -263,7 +301,7 @@ export function ChatScreen() {
         })}
         {!hydrated || loading ? (
           <ScreenState kind="loading" title="Загружаем переписку" message="Это займёт секунду" />
-        ) : historyError ? (
+        ) : historyError && messages.length === 0 ? (
           <ScreenState
             kind="error"
             title="Не удалось загрузить чат"
@@ -283,7 +321,7 @@ export function ChatScreen() {
           value={draft}
           onChangeText={(value) => {
             setDraft(value);
-            socketRef.current?.sendTyping(recipientId, value.trim().length > 0);
+            reportTyping(value.trim().length > 0);
           }}
           onSubmitEditing={send}
           placeholder="Напишите сообщение"

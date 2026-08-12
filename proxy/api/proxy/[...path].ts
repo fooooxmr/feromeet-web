@@ -18,6 +18,8 @@ const routes = [
   /^ws-chat\/info$/,
 ];
 
+const QUERY_KEYS = ['chatId', 'userId', 'meetId', 'sex', 'role'] as const;
+
 const buckets = new Map<string, { count: number; resetAt: number }>();
 
 function corsHeaders(origin: string | null) {
@@ -47,6 +49,70 @@ function corsHeaders(origin: string | null) {
 
 function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function cleanPath(value: string): string {
+  let path = value.trim();
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    /* keep raw */
+  }
+  return path.replace(/^\/+/, '').split('?')[0].replace(/^bridge\/?/, '');
+}
+
+function pathCandidate(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) {
+    return cleanPath(value.filter((part) => part && part !== 'bridge').join('/'));
+  }
+  if (!value || value === 'bridge') return '';
+  return cleanPath(String(value));
+}
+
+function queryFromUnknown(value: string | string[] | undefined): URLSearchParams {
+  const raw = Array.isArray(value) ? value.join('/') : String(value ?? '');
+  const index = raw.indexOf('?');
+  return index >= 0 ? new URLSearchParams(raw.slice(index + 1)) : new URLSearchParams();
+}
+
+function resolvePath(request: VercelRequest): string {
+  const url = new URL(request.url || '/', `https://${headerValue(request.headers.host) || 'localhost'}`);
+  const fromUri = headerValue(request.headers['x-forwarded-uri']) || url.pathname;
+  const candidates = [
+    pathCandidate(request.query.upstream),
+    pathCandidate(request.query.path),
+    cleanPath(fromUri.replace(/^\/api\/proxy\/?/, '')),
+    cleanPath(url.pathname.replace(/^\/api\/proxy\/?/, '')),
+  ].filter(Boolean);
+  return candidates.find((path) => routes.some((route) => route.test(path))) || candidates[0] || '';
+}
+
+function resolveSearch(request: VercelRequest): string {
+  const params = new URLSearchParams();
+  const extras = [
+    queryFromUnknown(request.query.upstream),
+    queryFromUnknown(headerValue(request.headers['x-forwarded-uri'])),
+    new URL(
+      request.url || '/',
+      `https://${headerValue(request.headers.host) || 'localhost'}`,
+    ).searchParams,
+  ];
+  for (const key of QUERY_KEYS) {
+    const direct = headerValue(request.query[key]);
+    if (direct) {
+      params.set(key, direct);
+      continue;
+    }
+    for (const extra of extras) {
+      const value = extra.get(key);
+      if (value) {
+        params.set(key, value);
+        break;
+      }
+    }
+  }
+  const query = params.toString();
+  return query ? `?${query}` : '';
 }
 
 function isRateLimited(request: VercelRequest): boolean {
@@ -104,16 +170,7 @@ export default async function handler(
     return;
   }
 
-  const rawPath = request.query.upstream ?? request.query.path;
-  let path = Array.isArray(rawPath) ? rawPath.join('/') : String(rawPath ?? '');
-  if (!path || path === 'bridge') {
-    const pathname = new URL(request.url || '/', 'http://localhost').pathname.replace(
-      /^\/api\/proxy\/?/,
-      '',
-    );
-    path = pathname && pathname !== 'bridge' ? pathname : '';
-  }
-  path = path.replace(/^\/+/, '');
+  const path = resolvePath(request);
 
   if (!routes.some((route) => route.test(path))) {
     response.status(404).send('Route is not allowed');
@@ -132,16 +189,14 @@ export default async function handler(
   if (authorization) headers.set('Authorization', authorization);
   if (contentType) headers.set('Content-Type', contentType);
   headers.set('Accept', 'application/json');
+  headers.set('User-Agent', 'okhttp/4.12.0');
 
   try {
-    const requestUrl = new URL(request.url || '/', `https://${request.headers.host}`);
-    requestUrl.searchParams.delete('upstream');
-    requestUrl.searchParams.delete('path');
     const body =
       request.method === 'GET' || request.method === 'DELETE'
         ? undefined
         : await readBody(request);
-    const upstream = await fetch(`${UPSTREAM}/${path}${requestUrl.search}`, {
+    const upstream = await fetch(`${UPSTREAM}/${path}${resolveSearch(request)}`, {
       method: request.method,
       headers,
       body,

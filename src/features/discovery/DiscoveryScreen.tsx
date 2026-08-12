@@ -527,9 +527,6 @@ export function DiscoveryScreen() {
         <View style={styles.stack}>
           {card}
           {dock}
-          <Pressable onPress={() => setProfileOpen(true)} style={styles.pullHint}>
-            <Text style={styles.pullHintText}>Свайп вверх — профиль</Text>
-          </Pressable>
         </View>
       )}
 
@@ -564,7 +561,7 @@ export function DiscoveryScreen() {
 }
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  stack: { flex: 1, paddingHorizontal: 12, paddingBottom: 8, overflow: 'hidden' },
+  stack: { flex: 1, paddingHorizontal: 12, paddingBottom: 16, overflow: 'hidden' },
   cardWrap: { flex: 1 },
   desktopBoard: {
     flex: 1,
@@ -605,8 +602,6 @@ const styles = StyleSheet.create({
   profileAbout: { color: colors.ink, fontSize: 16, lineHeight: 24, fontFamily },
   photoStrip: { flexDirection: 'row', gap: 8 },
   stripPhoto: { width: 72, height: 72, borderRadius: 16 },
-  pullHint: { alignItems: 'center', paddingBottom: 4 },
-  pullHintText: { color: colors.muted, fontSize: 12, fontFamily },
   card: {
     flex: 1,
     borderRadius: radius.lg,
@@ -643,7 +638,7 @@ const styles = StyleSheet.create({
   storyBarActive: { backgroundColor: '#fff' },
   readyBadge: {
     position: 'absolute',
-    top: 22,
+    top: 32,
     left: 16,
     backgroundColor: 'rgba(0,0,0,0.45)',
     borderRadius: radius.pill,
@@ -651,7 +646,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   readyText: { color: '#fff', fontWeight: '700', fontSize: 12, fontFamily },
-  cardMeta: { position: 'absolute', left: 16, right: 16, bottom: 78, gap: 6 },
+  cardMeta: { position: 'absolute', left: 16, right: 16, bottom: 112, gap: 6 },
   cardName: { color: '#fff', fontSize: 26, fontWeight: '800', fontFamily },
   onlineDot: { color: colors.green, fontSize: 14 },
   cardCity: { color: '#fff', fontWeight: '600', fontFamily },
@@ -660,7 +655,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 10,
+    bottom: 18,
+    zIndex: 2,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
