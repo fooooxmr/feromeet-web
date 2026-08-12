@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { AppShell } from '../src/components/AppShell';
 import { colors } from '../src/theme/tokens';
 import { useSessionStore } from '../src/state/session';
 
@@ -14,12 +15,14 @@ export default function RootLayout() {
   return (
     <>
       <StatusBar style="dark" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: colors.canvas },
-        }}
-      />
+      <AppShell>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { flex: 1, backgroundColor: colors.canvas },
+          }}
+        />
+      </AppShell>
     </>
   );
 }

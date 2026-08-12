@@ -73,7 +73,9 @@ export function Chip({
   onPress?: () => void;
   icon?: string;
 }) {
-  const tag = /^(ferotag_|inter_)/.test(label) ? formatTag(label) : undefined;
+  const tag = /[_]|^(ferotag_|inter_|alco_|occup_|person_)/.test(label)
+    ? formatTag(label)
+    : undefined;
   return (
     <Pressable onPress={onPress} style={[styles.chip, active && styles.chipActive]}>
       <Text style={[styles.chipText, active && styles.chipTextActive]}>

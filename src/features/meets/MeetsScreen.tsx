@@ -9,7 +9,8 @@ import { colors, fontFamily, spacing } from '../../theme/tokens';
 import { meetsApi } from '../../api/endpoints';
 import { useSessionStore } from '../../state/session';
 
-function stageMeta(stage: Meet['stages'][number], index: number) {
+function stageMeta(stage: Meet['stages'][number]) {
+  if (stage.subtitle) return stage.subtitle;
   if (stage.dateTime) {
     return new Date(stage.dateTime).toLocaleString('ru', {
       day: 'numeric',
@@ -19,7 +20,7 @@ function stageMeta(stage: Meet['stages'][number], index: number) {
     });
   }
   if (stage.completed) return 'Готово';
-  return stage.status || `Шаг ${index + 1}`;
+  return 'Сейчас';
 }
 
 export function MeetTimeline({ meet }: { meet: Meet }) {
@@ -41,7 +42,7 @@ export function MeetTimeline({ meet }: { meet: Meet }) {
             <Text style={[styles.stageTitle, !stage.completed && styles.stageTitleMuted]} numberOfLines={2}>
               {stage.title || `Этап ${index + 1}`}
             </Text>
-            <Text style={styles.stageMeta}>{stageMeta(stage, index)}</Text>
+            <Text style={styles.stageMeta}>{stageMeta(stage)}</Text>
           </View>
         </View>
       ))}

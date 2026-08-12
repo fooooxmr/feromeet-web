@@ -1,11 +1,12 @@
 import type { PropsWithChildren } from 'react';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 import { BrandMark } from './Logo';
 import { colors, fontFamily, shadow, spacing } from '../theme/tokens';
 import { meetsApi } from '../api/endpoints';
 import { useSessionStore } from '../state/session';
+import { useShellStore } from '../state/shell';
 
 const items = [
   { href: '/swipes', label: 'Свайпы', icon: '▣', activeIcon: '▣' },
@@ -32,11 +33,7 @@ function NavItem({
   const active = pathname === href || pathname.startsWith(`${href}/`);
 
   return (
-    <Pressable
-      accessibilityRole="link"
-      onPress={() => router.push(href)}
-      style={styles.item}
-    >
+    <Pressable accessibilityRole="link" onPress={() => router.push(href)} style={styles.item}>
       <View style={styles.iconWrap}>
         <Text style={[styles.icon, active && styles.activeText]}>
           {active ? activeIcon : icon}
@@ -50,12 +47,39 @@ function NavItem({
   );
 }
 
+export function AppHeader({
+  onFilter,
+}: {
+  onFilter?: () => void;
+}) {
+  return (
+    <View style={styles.header}>
+      <BrandMark />
+      {onFilter ? (
+        <Pressable accessibilityLabel="Фильтры" onPress={onFilter} style={styles.filter}>
+          <View style={styles.sliders}>
+            <View style={[styles.slider, { width: 14 }]} />
+            <View style={[styles.slider, { width: 10 }]} />
+            <View style={[styles.slider, { width: 16 }]} />
+          </View>
+        </Pressable>
+      ) : (
+        <View style={styles.filter} />
+      )}
+    </View>
+  );
+}
+
 export function AppShell({ children }: PropsWithChildren) {
-  const { width } = useWindowDimensions();
-  const framed = width >= 860;
+  const pathname = usePathname();
   const demoMode = useSessionStore((state) => state.demoMode);
   const isAuthenticated = useSessionStore((state) => state.isAuthenticated);
+  const openFilters = useShellStore((state) => state.openFilters);
   const [unread, setUnread] = useState(0);
+  const isChat = pathname.startsWith('/chat');
+  const isSwipes = pathname === '/swipes' || pathname.startsWith('/swipes');
+  const hideChrome =
+    pathname === '/phone' || pathname === '/otp' || pathname === '/onboarding' || isChat;
 
   useEffect(() => {
     if (demoMode || !isAuthenticated) return;
@@ -75,72 +99,56 @@ export function AppShell({ children }: PropsWithChildren) {
   }, [demoMode, isAuthenticated]);
 
   return (
-    <View style={[styles.stage, framed && styles.stageDesktop]}>
-      <View style={[styles.phone, framed && styles.phoneDesktop]}>
-      <View style={styles.body}>{children}</View>
-      <View style={styles.bottomBar}>
-          {items.map((item) => (
-            <NavItem
-              key={item.href}
-              {...item}
-              badge={item.href === '/meets' ? unread : undefined}
-            />
-          ))}
-        </View>
+    <View style={styles.stage}>
+      <View style={styles.phone}>
+        {!hideChrome && <AppHeader onFilter={isSwipes ? openFilters : undefined} />}
+        <View style={styles.body}>{children}</View>
+        {!hideChrome && (
+          <View style={styles.bottomBar}>
+            {items.map((item) => (
+              <NavItem
+                key={item.href}
+                {...item}
+                badge={item.href === '/meets' ? unread : undefined}
+              />
+            ))}
+          </View>
+        )}
       </View>
     </View>
   );
 }
 
-export function AppHeader({
-  onFilter,
-}: {
-  onFilter?: () => void;
-}) {
-  return (
-    <View style={styles.header}>
-      <BrandMark />
-      {onFilter ? (
-        <Pressable accessibilityLabel="Фильтры" onPress={onFilter} style={styles.filter}>
-          <Text style={styles.filterIcon}>☰</Text>
-        </Pressable>
-      ) : (
-        <View style={styles.filter} />
-      )}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  stage: { flex: 1, backgroundColor: colors.canvas },
-  stageDesktop: {
+  stage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
     backgroundColor: colors.stage,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 24,
   },
-  phone: { flex: 1, backgroundColor: colors.canvas },
-  phoneDesktop: {
-    width: 430,
-    maxWidth: '100%',
+  phone: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 430,
     height: '100%',
-    maxHeight: 920,
-    borderRadius: 36,
+    position: 'relative',
+    backgroundColor: colors.canvas,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#E8E2DA',
     ...shadow,
   },
-  body: { flex: 1 },
+  body: { flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' },
   header: {
     minHeight: 56,
     paddingHorizontal: spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    backgroundColor: colors.canvas,
   },
   filter: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
-  filterIcon: { color: colors.amber, fontSize: 22, fontWeight: '800' },
+  sliders: { gap: 4, alignItems: 'flex-end' },
+  slider: { height: 2, borderRadius: 1, backgroundColor: colors.amber },
   item: {
     flex: 1,
     minHeight: 58,

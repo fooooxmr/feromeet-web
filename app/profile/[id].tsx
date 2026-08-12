@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { discoveryApi } from '../../src/api/endpoints';
-import { Avatar, Button, Card, Chip, Page, ScreenState } from '../../src/components/ui';
-import { photoUrl, type FeromeetUser } from '../../src/domain/models';
+import { Button, Photo, ScreenState, TagChip } from '../../src/components/ui';
+import { ageFromBirthday, photoUrl, userPhotos, type FeromeetUser } from '../../src/domain/models';
+import { userChips } from '../../src/domain/tags';
 import { people } from '../../src/features/demo/fixtures';
 import { useSessionStore } from '../../src/state/session';
-import { colors, spacing } from '../../src/theme/tokens';
+import { colors, fontFamily, radius, spacing } from '../../src/theme/tokens';
 
 export default function PublicProfileRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -15,26 +16,38 @@ export default function PublicProfileRoute() {
   const [profile, setProfile] = useState<FeromeetUser | undefined>(
     demoMode ? people.find((person) => person.id === id) : undefined,
   );
+  const [loading, setLoading] = useState(!demoMode);
   const [error, setError] = useState('');
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const [favorite, setFavorite] = useState(false);
 
   useEffect(() => {
     if (!id || demoMode) return;
     let active = true;
+    setLoading(true);
     discoveryApi
       .getUser(id)
       .then((user) => {
         if (active) {
           setProfile(user);
+          setFavorite(Boolean(user.isFavorite));
           setError('');
         }
       })
       .catch(() => {
         if (active) setError('Не удалось загрузить профиль');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
     return () => {
       active = false;
     };
   }, [demoMode, id]);
+
+  if (loading) {
+    return <ScreenState kind="loading" title="Загружаем профиль" message="Это займёт секунду" />;
+  }
 
   if (!profile) {
     return (
@@ -47,51 +60,88 @@ export default function PublicProfileRoute() {
     );
   }
 
+  const age = ageFromBirthday(profile.birthday);
+  const photos = userPhotos(profile);
+  const uri = photoUrl(photos[photoIndex] ?? photos[0] ?? profile.mainPhotoFilename);
+
   return (
-    <Page
-      eyebrow="Полный профиль"
-      title={profile.name}
-      subtitle={[profile.city, profile.height ? `${profile.height} см` : undefined]
-        .filter(Boolean)
-        .join(' · ')}
-      action={<Button label="← Назад" variant="ghost" onPress={() => router.back()} />}
-    >
-      <View style={styles.bound}>
-        <Card>
-          <View style={styles.hero}>
-            <Avatar
-              name={profile.name}
-              size={128}
-              uri={photoUrl(profile.mainPhotoFilename)}
+    <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
+      <Pressable onPress={() => router.back()} style={styles.back}>
+        <Text style={styles.backText}>← Назад</Text>
+      </Pressable>
+      <Pressable
+        onPress={() => {
+          if (photos.length) setPhotoIndex((value) => (value + 1) % photos.length);
+        }}
+        style={styles.hero}
+      >
+        {uri ? (
+          <Photo uri={uri} style={styles.photo} accessibilityLabel={profile.name} />
+        ) : (
+          <View style={[styles.photo, styles.fallback]} />
+        )}
+        <View style={styles.storyRow}>
+          {(photos.length ? photos : ['placeholder']).map((photo, index) => (
+            <View
+              key={`${photo}-${index}`}
+              style={[styles.storyBar, index === photoIndex && styles.storyBarActive]}
             />
-            <View style={styles.copy}>
-              <Text style={styles.rating}>★ {profile.rating ?? '—'}</Text>
-              <Text style={styles.about}>{profile.textAbout || 'Пока без описания'}</Text>
-              <View style={styles.chips}>
-                {profile.ferotags?.map((tag) => <Chip key={tag} label={tag} />)}
-              </View>
-            </View>
-          </View>
-          <Button
-            label={profile.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
-            variant="secondary"
-            onPress={() => {
-              if (!demoMode) {
-                void discoveryApi.favorite(profile.id, !profile.isFavorite);
-              }
-            }}
-          />
-        </Card>
+          ))}
+        </View>
+      </Pressable>
+      <Text style={styles.name}>
+        {profile.name.trim()}
+        {age ? `, ${age}` : ''}
+      </Text>
+      <Text style={styles.meta}>
+        {[profile.city, profile.height ? `${profile.height} см` : undefined]
+          .filter(Boolean)
+          .join(' · ')}
+        {profile.rating != null ? `   ★  ${profile.rating}` : ''}
+      </Text>
+      <Text style={styles.about}>{profile.textAbout || 'Пока без описания'}</Text>
+      <View style={styles.chips}>
+        {userChips(profile).map((tag) => (
+          <TagChip key={tag.key || tag.label} tag={tag} />
+        ))}
       </View>
-    </Page>
+      <Button
+        label={favorite ? 'Убрать из избранного' : 'Добавить в избранное'}
+        variant="secondary"
+        onPress={() => {
+          const next = !favorite;
+          setFavorite(next);
+          if (!demoMode) void discoveryApi.favorite(profile.id, next);
+        }}
+      />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  bound: { width: '100%', maxWidth: 760, alignSelf: 'center' },
-  hero: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xl, alignItems: 'center' },
-  copy: { flex: 1, minWidth: 240, gap: spacing.md },
-  rating: { color: colors.berry, fontWeight: '900', fontSize: 18 },
-  about: { color: colors.ink, fontSize: 16, lineHeight: 24 },
+  page: { padding: spacing.lg, gap: spacing.md, paddingBottom: 28 },
+  back: { alignSelf: 'flex-start', paddingVertical: 4 },
+  backText: { color: colors.berry, fontWeight: '700', fontFamily },
+  hero: {
+    height: 360,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    backgroundColor: '#1A1714',
+  },
+  photo: { width: '100%', height: '100%' },
+  fallback: { backgroundColor: '#2A211C' },
+  storyRow: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    right: 12,
+    flexDirection: 'row',
+    gap: 4,
+  },
+  storyBar: { flex: 1, height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.35)' },
+  storyBarActive: { backgroundColor: '#fff' },
+  name: { color: colors.ink, fontSize: 26, fontWeight: '800', fontFamily },
+  meta: { color: colors.muted, fontWeight: '600', fontFamily, marginTop: -4 },
+  about: { color: colors.ink, fontSize: 15, lineHeight: 22, fontFamily },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
 });

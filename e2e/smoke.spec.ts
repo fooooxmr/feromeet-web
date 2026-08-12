@@ -12,6 +12,7 @@ test('demo covers discovery, invite, meets and profile', async ({ page }) => {
   await page.getByText('Посмотреть demo').click();
 
   await expect(page).toHaveURL(/\/swipes$/);
+  await expect(page.getByLabel('Feromeet')).toBeVisible();
   await expect(page.getByLabel('Пригласить')).toBeVisible();
   await page.getByLabel('Пригласить').click();
   await expect(page.getByText('Пригласить', { exact: true })).toBeVisible();

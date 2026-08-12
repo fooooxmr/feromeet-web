@@ -20,7 +20,7 @@ export default function Html({ children }: PropsWithChildren) {
         <ScrollViewStyleReset />
         <style
           dangerouslySetInnerHTML={{
-            __html: `html,body,#root{height:100%;background:#F4F1EC;font-family:'Golos Text',system-ui,sans-serif}*{font-family:inherit}`,
+            __html: `html,body,#root{height:100%;margin:0;overflow:hidden;background:#F4F1EC;font-family:'Golos Text',system-ui,sans-serif}#root{display:flex;flex-direction:column}*{font-family:inherit}`,
           }}
         />
       </head>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Image, Linking, Platform, StyleSheet, Switch, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Avatar, Button, Card, Chip, Field, Page, ScreenState, Sheet } from '../../components/ui';
+import { Avatar, Button, Card, Chip, Field, Page, ScreenState, Sheet, TagChip } from '../../components/ui';
 import { colors, fontFamily, spacing } from '../../theme/tokens';
 import { profileApi } from '../../api/endpoints';
 import { ageFromBirthday, photoUrl, type FeromeetUser } from '../../domain/models';
@@ -31,7 +31,7 @@ function ProfilePreview({ profile }: { profile?: FeromeetUser }) {
       </Text>
       <View style={styles.chips}>
         {userChips(profile ?? {}).map((tag) => (
-          <Chip key={tag.key} label={tag.key} />
+          <TagChip key={tag.key || tag.label} tag={tag} />
         ))}
       </View>
     </Card>

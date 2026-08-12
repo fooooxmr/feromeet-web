@@ -41,10 +41,9 @@ export const people: FeromeetUser[] = [
 ];
 
 const stages = [
-  { type: 'INVITE', title: 'Приглашение принято', completed: true },
-  { type: 'PLAN', title: 'Согласовать детали', completed: true },
-  { type: 'MEET', title: 'Подтвердить встречу', completed: false },
-  { type: 'RATE', title: 'Поделиться впечатлением', completed: false },
+  { type: 'STAGE_1', status: 'DONE', title: 'Приглашение', subtitle: 'Приглашение принято', completed: true },
+  { type: 'STAGE_2', status: 'CURRENT', title: 'Переписка', subtitle: 'Согласуйте детали', completed: false },
+  { type: 'STAGE_3', status: 'HIDDEN', title: 'Встреча', subtitle: 'Скоро', completed: false },
 ];
 
 export const meets: Meet[] = [
@@ -78,7 +77,12 @@ export const meets: Meet[] = [
     hasUpdates: false,
     countUnreadMessages: 0,
     createdAt: '2026-08-02T09:30:00Z',
-    stages: stages.map((stage) => ({ ...stage, completed: true })),
+    stages: stages.map((stage) => ({
+      ...stage,
+      status: 'DONE',
+      subtitle: 'Готово',
+      completed: true,
+    })),
     user: people[2]!,
   },
 ];

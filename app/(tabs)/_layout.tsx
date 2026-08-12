@@ -1,5 +1,4 @@
 import { Redirect, Slot } from 'expo-router';
-import { AppShell } from '../../src/components/AppShell';
 import { needsProfile } from '../../src/domain/models';
 import { useSessionStore } from '../../src/state/session';
 
@@ -16,9 +15,5 @@ export default function TabsLayout() {
     return <Redirect href="/onboarding" />;
   }
 
-  return (
-    <AppShell>
-      <Slot />
-    </AppShell>
-  );
+  return <Slot />;
 }

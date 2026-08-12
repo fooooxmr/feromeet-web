@@ -66,6 +66,7 @@ export function ChatScreen() {
         if (meet) {
           setPeerName(meet.user.name);
           setMeetId(meet.meetId);
+          setRecipientId(meet.user.id);
           if (!demoMode) void meetsApi.markAsRead(meet.meetId).catch(() => undefined);
         }
         if (historyResult.status === 'fulfilled' && historyResult.value.length > 0) {
@@ -154,13 +155,7 @@ export function ChatScreen() {
         <View style={styles.headerCopy}>
           <Text style={styles.name}>{peerName}</Text>
           <Text style={socketState === 'connected' ? styles.online : styles.preview}>
-            {socketState === 'connected'
-              ? '● онлайн'
-              : socketState === 'connecting'
-                ? 'подключаемся…'
-                : socketState === 'preview'
-                  ? 'preview'
-                  : 'история без realtime'}
+            {socketState === 'connected' ? '● онлайн' : 'напишите сообщение'}
           </Text>
         </View>
         <Pressable
@@ -170,13 +165,11 @@ export function ChatScreen() {
           <Text style={styles.planText}>План встречи</Text>
         </Pressable>
       </View>
-      <View style={styles.dateBanner}>
-        <Text style={styles.dateText}>
-          {!demoMode && socketState !== 'connected'
-            ? 'История доступна. Живой чат в браузере без WebSocket.'
-            : 'Сегодня · детали встречи сохраняются здесь'}
-        </Text>
-      </View>
+      {messages.length > 0 && (
+        <View style={styles.dateBanner}>
+          <Text style={styles.dateText}>Сегодня</Text>
+        </View>
+      )}
       <ScrollView contentContainerStyle={styles.messages} showsVerticalScrollIndicator={false}>
         {messages.map((message) => {
           const mine = message.senderId === currentUserId || message.senderId === 'me';
@@ -197,6 +190,9 @@ export function ChatScreen() {
             </View>
           );
         })}
+        {messages.length === 0 && (
+          <Text style={styles.empty}>Пока нет сообщений. Напишите первым.</Text>
+        )}
         {typing && <Text style={styles.typing}>{peerName} печатает…</Text>}
       </ScrollView>
       <View style={styles.composer}>
@@ -251,7 +247,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
-  messages: { width: '100%', maxWidth: 760, alignSelf: 'center', flexGrow: 1, padding: spacing.lg, gap: spacing.sm },
+  messages: { width: '100%', flexGrow: 1, padding: spacing.lg, gap: spacing.sm },
   messageRow: { flexDirection: 'row' },
   messageRowMine: { justifyContent: 'flex-end' },
   bubble: {
@@ -271,10 +267,9 @@ const styles = StyleSheet.create({
   time: { color: colors.muted, fontSize: 10, textAlign: 'right', marginTop: 4 },
   timeMine: { color: '#F2C8D5' },
   typing: { color: colors.muted, fontSize: 12, fontStyle: 'italic', marginTop: spacing.xs },
+  empty: { color: colors.muted, textAlign: 'center', marginTop: 48, fontFamily: 'Golos Text' },
   composer: {
     width: '100%',
-    maxWidth: 800,
-    alignSelf: 'center',
     padding: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',

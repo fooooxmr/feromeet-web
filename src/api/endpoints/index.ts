@@ -8,7 +8,7 @@ import type {
   RateMeetRequest,
   SearchPreference,
 } from '../../domain/models';
-import { unwrapReactions } from '../../domain/models';
+import { unwrapReactions, unwrapList, normalizeMeet, normalizeMeets } from '../../domain/models';
 
 const post = <T>(path: string, body?: unknown, auth = true) =>
   apiRequest<T>(path, { method: 'POST', body, auth });
@@ -39,7 +39,10 @@ export const authApi = {
 };
 
 export const discoveryApi = {
-  getUsers: () => apiRequest<FeromeetUser[]>('/api/user/get-all-users'),
+  getUsers: () =>
+    apiRequest<unknown>('/api/user/get-all-users').then((payload) =>
+      unwrapList<FeromeetUser>(payload),
+    ),
 
   getUser: (userId: string) =>
     apiRequest<FeromeetUser>(
@@ -77,10 +80,12 @@ const meetAction = (path: string, meetId: number) =>
   post<void>(`/api/meet/${path}`, { meetId });
 
 export const meetsApi = {
-  getActive: () => apiRequest<Meet[]>('/api/meet/get-active-meets'),
-  getPassed: () => apiRequest<Meet[]>('/api/meet/get-passed-meets'),
+  getActive: () =>
+    apiRequest<unknown>('/api/meet/get-active-meets').then(normalizeMeets),
+  getPassed: () =>
+    apiRequest<unknown>('/api/meet/get-passed-meets').then(normalizeMeets),
   getById: (meetId: number) =>
-    apiRequest<Meet>(`/api/meet/get-by-id${queryString({ meetId })}`),
+    apiRequest<Meet>(`/api/meet/get-by-id${queryString({ meetId })}`).then(normalizeMeet),
   accept: (meetId: number) =>
     meetAction('stage1/accept-by-victim', meetId),
   consentAsHunter: (meetId: number) =>
@@ -103,9 +108,9 @@ export const meetsApi = {
 
 export const chatApi = {
   getHistory: (chatId: string) =>
-    apiRequest<ChatMessage[]>(
+    apiRequest<unknown>(
       `/api/meet/api/chat/get-history${queryString({ chatId })}`,
-    ),
+    ).then((payload) => unwrapList<ChatMessage>(payload)),
 };
 
 export const profileApi = {

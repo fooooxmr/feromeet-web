@@ -19,12 +19,12 @@ import {
 } from '../../domain/models';
 import { FEROTAG_OPTIONS, formatTag, userChips } from '../../domain/tags';
 import { people } from '../demo/fixtures';
-import { AppHeader } from '../../components/AppShell';
 import { Button, Chip, Field, HeartMark, Photo, ScreenState, Sheet, TagChip } from '../../components/ui';
 import { colors, fontFamily, gradient, radius, shadow, spacing } from '../../theme/tokens';
 import { discoveryApi } from '../../api/endpoints';
 import { ApiError } from '../../api/client';
 import { useSessionStore } from '../../state/session';
+import { useShellStore } from '../../state/shell';
 
 const EXPENSE_OPTIONS: Array<{ type: ExpenseType; title: string; subtitle: string; icon: string }> = [
   { type: 'I_PAY', title: 'Я угощаю', subtitle: 'Всё включено', icon: '🤝' },
@@ -72,7 +72,7 @@ function DiscoveryCard({
       </View>
       <View style={styles.cardMeta}>
         <Text style={styles.cardName} numberOfLines={1}>
-          {person.name}{age ? `, ${age}` : ''}
+        {person.name.trim()}{age ? `, ${age}` : ''}
           {online ? <Text style={styles.onlineDot}>  ●</Text> : null}
         </Text>
         <Text style={styles.cardCity}>
@@ -106,8 +106,7 @@ function ActionDock({
         <Text style={styles.dockSkip}>✕</Text>
       </Pressable>
       <Pressable accessibilityLabel="Пригласить" onPress={onGo} style={styles.dockGo}>
-        <HeartMark size={42} />
-        <Text style={styles.dockGoText}>GO</Text>
+        <HeartMark size={72} label="GO" />
       </Pressable>
       <Pressable accessibilityLabel="В симпатии" onPress={onFavorite} style={styles.dockButton}>
         <Text style={[styles.dockHeart, favorite && styles.dockHeartActive]}>
@@ -169,7 +168,8 @@ function InviteSheet({
           {tags.map((tag) => (
             <Chip
               key={tag.key}
-              label={tag.key}
+              label={tag.label}
+              icon={tag.icon}
               active={ferotag === tag.key}
               onPress={() => setFerotag(tag.key)}
             />
@@ -247,6 +247,7 @@ function FilterSheet({
 
 export function DiscoveryScreen() {
   const demoMode = useSessionStore((state) => state.demoMode);
+  const setOpenFilters = useShellStore((state) => state.setOpenFilters);
   const [remotePeople, setRemotePeople] = useState<FeromeetUser[]>();
   const [loading, setLoading] = useState(!demoMode);
   const [error, setError] = useState('');
@@ -288,6 +289,11 @@ export function DiscoveryScreen() {
       discoveryApi.getPreference().then(setPreference).catch(() => undefined);
     }
   }, [demoMode]);
+
+  useEffect(() => {
+    setOpenFilters(() => setFilterOpen(true));
+    return () => setOpenFilters(undefined);
+  }, [setOpenFilters]);
 
   useEffect(() => {
     setPhotoIndex(0);
@@ -382,7 +388,6 @@ export function DiscoveryScreen() {
 
   return (
     <View style={styles.screen}>
-      <AppHeader onFilter={() => setFilterOpen(true)} />
       {loading ? (
         <ScreenState kind="loading" title="Загружаем анкеты" message="Это займёт секунду" />
       ) : !person ? (
@@ -515,20 +520,8 @@ const styles = StyleSheet.create({
   dockGo: {
     width: 78,
     height: 78,
-    borderRadius: 39,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
-    ...shadow,
-  },
-  dockGoText: {
-    position: 'absolute',
-    color: '#fff',
-    fontWeight: '800',
-    letterSpacing: 0.4,
-    fontSize: 11,
-    fontFamily,
-    top: 28,
   },
   inviteBody: { gap: spacing.md, paddingBottom: spacing.md },
   sectionLabel: { color: colors.ink, fontWeight: '700', fontFamily },

@@ -60,7 +60,7 @@ export default function MeetRoute() {
         </Pressable>
       }
     >
-      <View style={styles.bound}>
+      <View>
         <MeetDetail meet={meet} />
       </View>
     </Page>
@@ -68,7 +68,6 @@ export default function MeetRoute() {
 }
 
 const styles = StyleSheet.create({
-  bound: { width: '100%', maxWidth: 760, alignSelf: 'center' },
   back: { padding: spacing.sm },
   backText: { color: colors.berry, fontWeight: '800' },
 });
