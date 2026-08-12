@@ -13,8 +13,9 @@ export default function PublicProfileRoute() {
   const router = useRouter();
   const demoMode = useSessionStore((state) => state.demoMode);
   const [profile, setProfile] = useState<FeromeetUser | undefined>(
-    people.find((person) => person.id === id),
+    demoMode ? people.find((person) => person.id === id) : undefined,
   );
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!id || demoMode) return;
@@ -22,9 +23,14 @@ export default function PublicProfileRoute() {
     discoveryApi
       .getUser(id)
       .then((user) => {
-        if (active) setProfile(user);
+        if (active) {
+          setProfile(user);
+          setError('');
+        }
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (active) setError('Не удалось загрузить профиль');
+      });
     return () => {
       active = false;
     };
@@ -34,8 +40,8 @@ export default function PublicProfileRoute() {
     return (
       <ScreenState
         kind="error"
-        title="Профиль не найден"
-        message="Возможно, пользователь больше не доступен."
+        title={error ? 'Ошибка' : 'Профиль не найден'}
+        message={error || 'Возможно, пользователь больше не доступен.'}
         action={() => router.back()}
       />
     );

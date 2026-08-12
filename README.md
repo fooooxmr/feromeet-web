@@ -7,9 +7,9 @@ It shares one component tree across desktop web, mobile web, Android, and iOS.
 
 - Phone/SMS authentication against the Feromeet API
 - Responsive discovery cards and profile details
-- Likes, favourites, search preferences, and budget-based invitations
+- Likes, favourites, search preferences, and invitations without a budget field
 - Active and past date timelines
-- Chat history plus SockJS/STOMP realtime transport
+- Chat history; realtime SockJS/STOMP only when `EXPO_PUBLIC_WS_URL` is set
 - Profile, safety, logout, and account deletion flows
 - Safe demo data when no test account is available
 
@@ -29,7 +29,8 @@ npm run web
 
 The production API rejects browser CORS preflights. Set
 `EXPO_PUBLIC_API_URL` to the deployed allowlisted proxy URL. Native builds can
-use `https://feromeet.com` directly.
+use `https://feromeet.com` directly. Browser WebSocket upgrades are not
+proxied; leave `EXPO_PUBLIC_WS_URL` unset on Pages so chat stays on HTTP history.
 
 ## Checks
 

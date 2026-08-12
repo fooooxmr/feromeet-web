@@ -33,7 +33,13 @@ No application secrets, tokens, signing material, or user data are included here
 | POST | `/api/auth/refresh-access-token` | `{ refreshToken }` → token pair |
 
 Token result fields are `accessToken`, `refreshToken`, and
-`registrationStatus`.
+`registrationStatus`. Observed status values:
+
+- `NONE`
+- `NOT_REGISTERED_PHONE_ENTERED`
+- `REGISTERED_PHONE_VERIFIED` — continue onboarding
+- `REGISTERED_PROFILE_FILLED` / `REGISTERED` — enter the main app
+- `PROFILE_REQUIRED` — legacy alias treated as onboarding
 
 ## Discovery and reactions
 
@@ -43,7 +49,7 @@ Token result fields are `accessToken`, `refreshToken`, and
 | GET | `/api/user/get-by-id` | `userId` |
 | GET | `/api/user/get-search-preference` | — |
 | POST | `/api/user/save/search-preference` | `{ sex, ageMin, ageMax, radius }` |
-| POST | `/api/meet/invite` | `{ price, ferotag, expenseType, comment, userTo }` |
+| POST | `/api/meet/invite` | `{ price: 0, ferotag, expenseType, comment, userTo }` |
 | GET | `/api/reaction/get-all-reactions` | — |
 | POST | `/api/reaction/add-like` | user id body |
 | POST | `/api/reaction/add-dislike` | user id body |
@@ -53,7 +59,9 @@ Token result fields are `accessToken`, `refreshToken`, and
 Discovery users include `id`, `name`, `city`, `birthday`, `gender`, `rating`,
 `interestedIn`, `readyToGo`, `height`, `lastSeen`, `ferotags`,
 `infotagCategories`, photo filenames, `textAbout`, `isFavorite`, and
-`impressionTags`.
+`impressionTags`. Invite `expenseType` is `I_PAY | SPLIT | YOU_PAY`. The
+native client sends `price: 0` (no budget field). `GET /api/reaction/get-all-reactions`
+returns `{ user, isFavorite, isLikeYou }[]`.
 
 ## Profile
 
@@ -66,8 +74,8 @@ Base path: `/api/user/`.
 | POST | `save/height` | `{ height }` |
 | POST | `save/text-about` | `{ textAbout }` |
 | POST | `save/ferotags` | selected tags |
-| POST | `save/infotags` | selected categories |
-| POST | `save/geo` | latitude, longitude, city |
+| POST | `save/infotags` | `{ infotagCategory, infotags }` |
+| POST | `save/geo` | `{ lat, lng, city }` as strings |
 | POST multipart | `save/photos` | main, preview and additional photos |
 | POST | `save/device` | FCM device token (native only) |
 
@@ -90,7 +98,7 @@ Base path: `/api/meet/`.
 | POST | `stage3/arrival-from-hunter` | Confirm arrival |
 | POST | `stage3/arrival-from-victim` | Confirm arrival |
 | POST | `cancel` | Cancel a date |
-| POST | `rate` | Submit date rating |
+| POST | `rate` | `{ meetId, score, comment, impressionTags }` |
 | POST | `mark-as-read` | Clear meet updates |
 | POST | `hide` | Hide a past meet |
 
@@ -102,6 +110,9 @@ Meet records include `meetId`, `chatId`, `price`, `ferotag`, `expenseType`,
 
 - History: `GET /api/meet/api/chat/get-history?chatId=…`
 - Socket: SockJS/STOMP `https://feromeet.com/ws-chat`
+- Browser builds cannot upgrade WebSocket through the HTTP proxy. Set
+  `EXPO_PUBLIC_WS_URL` for native/direct access; otherwise the web client
+  shows chat history only.
 - Auth is sent both in the WebSocket handshake and STOMP `CONNECT`.
 - Subscriptions:
   - `/user/queue/chat.{chatId}.messages`

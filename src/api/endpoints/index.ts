@@ -5,9 +5,10 @@ import type {
   FeromeetUser,
   InviteRequest,
   Meet,
-  ReactionUser,
+  RateMeetRequest,
   SearchPreference,
 } from '../../domain/models';
+import { unwrapReactions } from '../../domain/models';
 
 const post = <T>(path: string, body?: unknown, auth = true) =>
   apiRequest<T>(path, { method: 'POST', body, auth });
@@ -66,7 +67,7 @@ export const discoveryApi = {
     ),
 
   getFavorites: () =>
-    apiRequest<ReactionUser[]>('/api/reaction/get-all-reactions'),
+    apiRequest<unknown>('/api/reaction/get-all-reactions').then(unwrapReactions),
 
   invite: (request: InviteRequest) =>
     post<void>('/api/meet/invite', request),
@@ -93,9 +94,11 @@ export const meetsApi = {
   cancel: (meetId: number) => meetAction('cancel', meetId),
   markAsRead: (meetId: number) => meetAction('mark-as-read', meetId),
   hide: (meetId: number) => meetAction('hide', meetId),
-  rate: (
-    payload: Record<string, unknown> & { meetId: number },
-  ) => post<void>('/api/meet/rate', payload),
+  rate: (payload: RateMeetRequest) => post<void>('/api/meet/rate', payload),
+  getImpressionTags: (sex: string, role: string) =>
+    apiRequest<string[]>(
+      `/api/meet/get-impression-tags${queryString({ sex, role })}`,
+    ),
 };
 
 export const chatApi = {
@@ -112,11 +115,15 @@ export const profileApi = {
   saveAbout: (textAbout: string) =>
     post<void>('/api/user/save/text-about', { textAbout }),
   saveLocation: (latitude: number, longitude: number, city: string) =>
-    post<void>('/api/user/save/geo', { latitude, longitude, city }),
+    post<void>('/api/user/save/geo', {
+      lat: String(latitude),
+      lng: String(longitude),
+      city,
+    }),
   saveFerotags: (ferotags: string[]) =>
     post<void>('/api/user/save/ferotags', { ferotags }),
-  saveInfotags: (infotags: unknown[]) =>
-    post<void>('/api/user/save/infotags', { infotags }),
+  saveInfotags: (infotagCategory: string, infotags: string[]) =>
+    post<void>('/api/user/save/infotags', { infotagCategory, infotags }),
   savePhotos: (form: FormData) =>
     apiRequest<void>('/api/user/save/photos', {
       method: 'POST',

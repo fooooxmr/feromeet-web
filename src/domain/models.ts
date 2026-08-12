@@ -1,4 +1,11 @@
-export type RegistrationStatus = 'REGISTERED' | 'PROFILE_REQUIRED' | string;
+export type RegistrationStatus =
+  | 'REGISTERED'
+  | 'PROFILE_REQUIRED'
+  | 'REGISTERED_PHONE_VERIFIED'
+  | 'NOT_REGISTERED_PHONE_ENTERED'
+  | 'REGISTERED_PROFILE_FILLED'
+  | 'NONE'
+  | string;
 
 export interface AuthTokens {
   accessToken: string;
@@ -61,6 +68,13 @@ export interface InviteRequest {
   expenseType: ExpenseType;
   comment: string;
   userTo: string;
+}
+
+export interface RateMeetRequest {
+  meetId: number;
+  score: number;
+  comment: string;
+  impressionTags: string[];
 }
 
 export interface ReactionUser extends FeromeetUser {
@@ -126,4 +140,31 @@ export function userPhotos(user: FeromeetUser): string[] {
   return [user.mainPhotoFilename, ...(user.otherPhotoFilenames ?? [])].filter(
     (filename): filename is string => Boolean(filename),
   );
+}
+
+export function needsProfile(status?: string) {
+  return (
+    status === 'PROFILE_REQUIRED' ||
+    status === 'REGISTERED_PHONE_VERIFIED' ||
+    status === 'NOT_REGISTERED_PHONE_ENTERED'
+  );
+}
+
+export function unwrapReactions(payload: unknown): ReactionUser[] {
+  if (!Array.isArray(payload)) return [];
+  return payload.map((item) => {
+    if (item && typeof item === 'object' && 'user' in item) {
+      const row = item as {
+        user: FeromeetUser;
+        isFavorite?: boolean;
+        isLikeYou?: boolean;
+      };
+      return {
+        ...row.user,
+        isFavorite: row.isFavorite,
+        reactionType: row.isFavorite ? 'FAVORITE' : 'LIKE',
+      };
+    }
+    return item as ReactionUser;
+  });
 }

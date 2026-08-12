@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-na
 import { useRouter } from 'expo-router';
 import { photoUrl, type Meet } from '../../domain/models';
 import { meets } from '../demo/fixtures';
-import { Avatar, Button, Card, Chip, Page } from '../../components/ui';
+import { Avatar, Button, Card, Chip, Page, ScreenState } from '../../components/ui';
 import { colors, radius, spacing } from '../../theme/tokens';
 import { meetsApi } from '../../api/endpoints';
 import { useSessionStore } from '../../state/session';
@@ -109,19 +109,39 @@ export function MeetDetail({ meet }: { meet: Meet }) {
               variant="ghost"
               onPress={() => void run(() => meetsApi.cancel(meet.meetId), 'Встреча отменена')}
             />
+            <Button
+              disabled={busy}
+              label="Прочитано"
+              variant="ghost"
+              onPress={() => void run(() => meetsApi.markAsRead(meet.meetId), 'Обновления скрыты')}
+            />
             <Button label="Детали" variant="secondary" onPress={() => router.push(`/meet/${meet.meetId}`)} />
           </>
         ) : (
-          <Button
-            label="Оценить встречу"
-            variant="secondary"
-            onPress={() =>
-              void run(
-                () => meetsApi.rate({ meetId: meet.meetId, score: 5 }),
-                'Оценка отправлена',
-              )
-            }
-          />
+          <>
+            <Button
+              label="Оценить встречу"
+              variant="secondary"
+              onPress={() =>
+                void run(
+                  () =>
+                    meetsApi.rate({
+                      meetId: meet.meetId,
+                      score: 5,
+                      comment: '',
+                      impressionTags: [],
+                    }),
+                  'Оценка отправлена',
+                )
+              }
+            />
+            <Button
+              disabled={busy}
+              label="Скрыть"
+              variant="ghost"
+              onPress={() => void run(() => meetsApi.hide(meet.meetId), 'Встреча скрыта')}
+            />
+          </>
         )}
       </View>
     </Card>
@@ -133,9 +153,10 @@ export function MeetsScreen() {
   const desktop = width >= 1040;
   const demoMode = useSessionStore((state) => state.demoMode);
   const [tab, setTab] = useState<'active' | 'passed'>('active');
-  const [availableMeets, setAvailableMeets] = useState<Meet[]>(meets);
+  const [availableMeets, setAvailableMeets] = useState<Meet[]>(demoMode ? meets : []);
+  const [error, setError] = useState('');
   const filtered = availableMeets.filter((meet) => (tab === 'active' ? meet.status !== 'PASSED' : meet.status === 'PASSED'));
-  const [selectedId, setSelectedId] = useState(meets[0]?.meetId ?? 0);
+  const [selectedId, setSelectedId] = useState(demoMode ? meets[0]?.meetId ?? 0 : 0);
   const selected = availableMeets.find((meet) => meet.meetId === selectedId) ?? filtered[0];
 
   useEffect(() => {
@@ -143,10 +164,13 @@ export function MeetsScreen() {
     let active = true;
     Promise.all([meetsApi.getActive(), meetsApi.getPassed()])
       .then(([current, passed]) => {
-        if (active && current.length + passed.length > 0) setAvailableMeets([...current, ...passed]);
+        if (!active) return;
+        const next = [...(Array.isArray(current) ? current : []), ...(Array.isArray(passed) ? passed : [])];
+        setAvailableMeets(next);
+        setError('');
       })
       .catch(() => {
-        // Demo fixtures remain visible when live meet payloads are unavailable.
+        if (active) setError('Не удалось загрузить встречи');
       });
     return () => {
       active = false;
@@ -163,7 +187,15 @@ export function MeetsScreen() {
         </View>
       }
     >
-      {desktop ? (
+      {error ? (
+        <ScreenState kind="error" title="Ошибка" message={error} />
+      ) : filtered.length === 0 ? (
+        <ScreenState
+          kind="empty"
+          title={tab === 'active' ? 'Пока нет встреч' : 'Прошедших встреч нет'}
+          message="Приглашения и подтверждённые свидания появятся здесь."
+        />
+      ) : desktop ? (
         <View style={styles.split}>
           <View style={styles.meetList}>
             {filtered.map((meet) => (

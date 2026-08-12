@@ -7,36 +7,43 @@ import { MeetDetail } from '../../src/features/meets/MeetsScreen';
 import { colors, spacing } from '../../src/theme/tokens';
 import { meetsApi } from '../../src/api/endpoints';
 import type { Meet } from '../../src/domain/models';
+import { useSessionStore } from '../../src/state/session';
 
 export default function MeetRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const demoMode = useSessionStore((state) => state.demoMode);
   const [meet, setMeet] = useState<Meet | undefined>(() =>
-    meets.find((item) => String(item.meetId) === id),
+    demoMode ? meets.find((item) => String(item.meetId) === id) : undefined,
   );
+  const [error, setError] = useState('');
 
   useEffect(() => {
+    if (demoMode) return;
     const meetId = Number(id);
     if (!Number.isFinite(meetId)) return;
     let active = true;
     meetsApi.getById(meetId)
       .then((value) => {
-        if (active) setMeet(value);
+        if (active) {
+          setMeet(value);
+          setError('');
+        }
       })
       .catch(() => {
-        // Keep the local meet detail available while the backend is unreachable.
+        if (active) setError('Не удалось загрузить встречу');
       });
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [demoMode, id]);
 
   if (!meet) {
     return (
       <ScreenState
         kind="error"
-        title="Встреча не найдена"
-        message="Возможно, она была отменена или ссылка устарела."
+        title={error ? 'Ошибка' : 'Встреча не найдена'}
+        message={error || 'Возможно, она была отменена или ссылка устарела.'}
         action={() => router.replace('/meets')}
       />
     );

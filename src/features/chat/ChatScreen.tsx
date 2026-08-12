@@ -14,22 +14,26 @@ import type { ChatMessage } from '../../domain/models';
 import { messages as initialMessages } from '../demo/fixtures';
 import { Avatar } from '../../components/ui';
 import { colors, radius, spacing } from '../../theme/tokens';
-import { chatApi, profileApi } from '../../api/endpoints';
+import { chatApi, meetsApi, profileApi } from '../../api/endpoints';
 import { FeromeetChatSocket } from '../../api/chatSocket';
 import { useSessionStore } from '../../state/session';
 
 export function ChatScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const accessToken = useSessionStore((state) => state.accessToken);
+  const demoMode = useSessionStore((state) => state.demoMode);
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentUserId, setCurrentUserId] = useState('me');
   const [recipientId, setRecipientId] = useState('lena');
+  const [peerName, setPeerName] = useState(demoMode ? 'Лена' : 'Собеседник');
+  const [meetId, setMeetId] = useState<number>();
   const [typing, setTyping] = useState(false);
-  const [socketState, setSocketState] = useState<'preview' | 'connecting' | 'connected'>('preview');
+  const [socketState, setSocketState] = useState<'preview' | 'connecting' | 'connected' | 'offline'>(
+    demoMode ? 'preview' : 'offline',
+  );
   const socketRef = useRef<FeromeetChatSocket | undefined>(undefined);
-  const accessToken = useSessionStore((state) => state.accessToken);
-  const demoMode = useSessionStore((state) => state.demoMode);
 
   useEffect(() => {
     if (!id) return;
@@ -40,11 +44,29 @@ export function ChatScreen() {
         active = false;
       };
     }
-    Promise.allSettled([chatApi.getHistory(id), profileApi.getMyProfile()]).then(
-      ([historyResult, profileResult]) => {
+    Promise.allSettled([
+      chatApi.getHistory(id),
+      profileApi.getMyProfile(),
+      meetsApi.getActive(),
+      meetsApi.getPassed(),
+    ]).then(([historyResult, profileResult, activeResult, passedResult]) => {
         if (!active) return;
         if (profileResult.status === 'fulfilled') {
           setCurrentUserId(profileResult.value.id);
+        }
+        const allMeets = [
+          ...(activeResult.status === 'fulfilled' && Array.isArray(activeResult.value)
+            ? activeResult.value
+            : []),
+          ...(passedResult.status === 'fulfilled' && Array.isArray(passedResult.value)
+            ? passedResult.value
+            : []),
+        ];
+        const meet = allMeets.find((item) => item.chatId === id);
+        if (meet) {
+          setPeerName(meet.user.name);
+          setMeetId(meet.meetId);
+          if (!demoMode) void meetsApi.markAsRead(meet.meetId).catch(() => undefined);
         }
         if (historyResult.status === 'fulfilled' && historyResult.value.length > 0) {
           setMessages(historyResult.value);
@@ -60,7 +82,7 @@ export function ChatScreen() {
       },
     );
 
-    if (accessToken) {
+    if (accessToken && (process.env.EXPO_PUBLIC_WS_URL || typeof window === 'undefined')) {
       setSocketState('connecting');
       const socket = new FeromeetChatSocket(accessToken, id, {
         onMessage: (message) => {
@@ -79,7 +101,13 @@ export function ChatScreen() {
         },
         onState: (state) => {
           if (!active) return;
-          setSocketState(state === 'connected' ? 'connected' : 'preview');
+          setSocketState(
+            state === 'connected'
+              ? 'connected'
+              : state === 'connecting'
+                ? 'connecting'
+                : 'offline',
+          );
         },
       });
       socketRef.current = socket;
@@ -122,19 +150,32 @@ export function ChatScreen() {
         <Pressable accessibilityLabel="Назад" onPress={() => router.back()} style={styles.back}>
           <Text style={styles.backText}>‹</Text>
         </Pressable>
-        <Avatar name="Лена" size={44} />
+        <Avatar name={peerName} size={44} />
         <View style={styles.headerCopy}>
-          <Text style={styles.name}>Лена</Text>
+          <Text style={styles.name}>{peerName}</Text>
           <Text style={socketState === 'connected' ? styles.online : styles.preview}>
-            {socketState === 'connected' ? '● онлайн' : socketState === 'connecting' ? 'подключаемся…' : 'preview'}
+            {socketState === 'connected'
+              ? '● онлайн'
+              : socketState === 'connecting'
+                ? 'подключаемся…'
+                : socketState === 'preview'
+                  ? 'preview'
+                  : 'история без realtime'}
           </Text>
         </View>
-        <Pressable onPress={() => router.push('/meet/1042')} style={styles.planButton}>
+        <Pressable
+          onPress={() => router.push(meetId ? `/meet/${meetId}` : '/meets')}
+          style={styles.planButton}
+        >
           <Text style={styles.planText}>План встречи</Text>
         </Pressable>
       </View>
       <View style={styles.dateBanner}>
-        <Text style={styles.dateText}>Сегодня · детали встречи сохраняются здесь</Text>
+        <Text style={styles.dateText}>
+          {!demoMode && socketState !== 'connected'
+            ? 'История доступна. Живой чат в браузере без WebSocket.'
+            : 'Сегодня · детали встречи сохраняются здесь'}
+        </Text>
       </View>
       <ScrollView contentContainerStyle={styles.messages} showsVerticalScrollIndicator={false}>
         {messages.map((message) => {
@@ -156,7 +197,7 @@ export function ChatScreen() {
             </View>
           );
         })}
-        {typing && <Text style={styles.typing}>Лена печатает…</Text>}
+        {typing && <Text style={styles.typing}>{peerName} печатает…</Text>}
       </ScrollView>
       <View style={styles.composer}>
         <Pressable style={styles.attach}>

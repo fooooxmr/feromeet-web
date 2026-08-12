@@ -1,5 +1,6 @@
 import { Redirect } from 'expo-router';
 import { ScreenState } from '../src/components/ui';
+import { needsProfile } from '../src/domain/models';
 import { useSessionStore } from '../src/state/session';
 
 export default function Index() {
@@ -13,6 +14,6 @@ export default function Index() {
   }
 
   if (!isAuthenticated) return <Redirect href="/phone" />;
-  if (!demoMode && registrationStatus === 'PROFILE_REQUIRED') return <Redirect href="/onboarding" />;
+  if (!demoMode && needsProfile(registrationStatus)) return <Redirect href="/onboarding" />;
   return <Redirect href="/swipes" />;
 }

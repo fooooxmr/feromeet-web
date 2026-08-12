@@ -296,7 +296,7 @@ export function DiscoveryScreen() {
       void discoveryApi.favorite(person.id, !person.isFavorite).catch(() => undefined);
     }
     setRemotePeople((current) =>
-      (current ?? people).map((item) =>
+      (current ?? (demoMode ? people : [])).map((item) =>
         item.id === person.id ? { ...item, isFavorite: !item.isFavorite } : item,
       ),
     );
@@ -308,7 +308,6 @@ export function DiscoveryScreen() {
     setInviteError('');
     try {
       if (!demoMode) {
-        await discoveryApi.like(person.id);
         await discoveryApi.invite({
           price: 0,
           expenseType,

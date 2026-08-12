@@ -26,10 +26,11 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: |
+          test -n "${{ vars.EXPO_PUBLIC_API_URL }}" || (echo "Set repository variable EXPO_PUBLIC_API_URL" && exit 1)
       - run: npm run export
         env:
           EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
-          EXPO_PUBLIC_DEMO_MODE: "true"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -1,5 +1,6 @@
 import { Redirect, Slot } from 'expo-router';
 import { AppShell } from '../../src/components/AppShell';
+import { needsProfile } from '../../src/domain/models';
 import { useSessionStore } from '../../src/state/session';
 
 export default function TabsLayout() {
@@ -11,7 +12,7 @@ export default function TabsLayout() {
   if (hydrated && !isAuthenticated) {
     return <Redirect href="/phone" />;
   }
-  if (hydrated && !demoMode && registrationStatus === 'PROFILE_REQUIRED') {
+  if (hydrated && !demoMode && needsProfile(registrationStatus)) {
     return <Redirect href="/onboarding" />;
   }
 

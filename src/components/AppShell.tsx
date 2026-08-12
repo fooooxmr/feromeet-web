@@ -1,8 +1,11 @@
 import type { PropsWithChildren } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 import { BrandMark } from './ui';
 import { colors, radius, spacing } from '../theme/tokens';
+import { meetsApi } from '../api/endpoints';
+import { useSessionStore } from '../state/session';
 
 const items = [
   { href: '/swipes', label: 'Свайпы', icon: '▣' },
@@ -16,11 +19,13 @@ function NavItem({
   label,
   icon,
   compact,
+  badge,
 }: {
   href: (typeof items)[number]['href'];
   label: string;
   icon: string;
   compact: boolean;
+  badge?: number;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -32,7 +37,12 @@ function NavItem({
       onPress={() => router.push(href)}
       style={[styles.item, compact && styles.itemCompact, active && styles.itemActive]}
     >
-      <Text style={[styles.icon, active && styles.activeText]}>{icon}</Text>
+      <View style={styles.iconWrap}>
+        <Text style={[styles.icon, active && styles.activeText]}>{icon}</Text>
+        {!!badge && badge > 0 && (
+          <Text style={styles.badge}>{badge > 99 ? '99+' : badge}</Text>
+        )}
+      </View>
       <Text style={[styles.itemText, compact && styles.itemTextCompact, active && styles.activeText]}>
         {label}
       </Text>
@@ -43,6 +53,26 @@ function NavItem({
 export function AppShell({ children }: PropsWithChildren) {
   const { width } = useWindowDimensions();
   const desktop = width >= 860;
+  const demoMode = useSessionStore((state) => state.demoMode);
+  const isAuthenticated = useSessionStore((state) => state.isAuthenticated);
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    if (demoMode || !isAuthenticated) return;
+    let active = true;
+    meetsApi
+      .getActive()
+      .then((current) => {
+        if (!active || !Array.isArray(current)) return;
+        setUnread(
+          current.reduce((sum, meet) => sum + (meet.countUnreadMessages || 0), 0),
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [demoMode, isAuthenticated]);
 
   return (
     <View style={styles.shell}>
@@ -51,7 +81,12 @@ export function AppShell({ children }: PropsWithChildren) {
           <BrandMark />
           <View style={styles.topNav}>
             {items.map((item) => (
-              <NavItem key={item.href} {...item} compact={false} />
+              <NavItem
+                key={item.href}
+                {...item}
+                compact={false}
+                badge={item.href === '/meets' ? unread : undefined}
+              />
             ))}
           </View>
         </View>
@@ -60,7 +95,12 @@ export function AppShell({ children }: PropsWithChildren) {
       {!desktop && (
         <View style={styles.bottomBar}>
           {items.map((item) => (
-            <NavItem key={item.href} {...item} compact />
+            <NavItem
+              key={item.href}
+              {...item}
+              compact
+              badge={item.href === '/meets' ? unread : undefined}
+            />
           ))}
         </View>
       )}
@@ -98,7 +138,24 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   itemActive: { backgroundColor: colors.soft },
+  iconWrap: { position: 'relative' },
   icon: { width: 22, textAlign: 'center', color: colors.muted, fontSize: 18, fontWeight: '800' },
+  badge: {
+    position: 'absolute',
+    top: -6,
+    right: -10,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    overflow: 'hidden',
+    textAlign: 'center',
+    lineHeight: 16,
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.surface,
+    backgroundColor: colors.amber,
+  },
   itemText: { color: colors.muted, fontWeight: '700', fontSize: 14 },
   itemTextCompact: { width: '100%', textAlign: 'center', fontSize: 10 },
   activeText: { color: colors.berry },

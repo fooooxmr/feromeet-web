@@ -13,6 +13,7 @@ import { BrandMark, Button, Field } from '../../components/ui';
 import { colors, radius, shadow, spacing } from '../../theme/tokens';
 import { authApi } from '../../api/endpoints';
 import { ApiError } from '../../api/client';
+import { needsProfile } from '../../domain/models';
 import { useSessionStore } from '../../state/session';
 
 export function PhoneScreen() {
@@ -113,7 +114,7 @@ export function OtpScreen() {
           ? await authApi.registerWithSms(phone, code)
           : await authApi.loginWithSms(phone, code);
       await setTokens(tokens);
-      router.replace(tokens.registrationStatus === 'PROFILE_REQUIRED' ? '/onboarding' : '/swipes');
+      router.replace(needsProfile(tokens.registrationStatus) ? '/onboarding' : '/swipes');
     } catch (loginError) {
       setError(
         loginError instanceof ApiError

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Image, Platform, StyleSheet, Switch, Text, View } from 'react-native';
+import { Image, Linking, Platform, StyleSheet, Switch, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Avatar, Button, Card, Chip, Field, Page, Sheet } from '../../components/ui';
@@ -63,7 +63,7 @@ export function ProfileScreen({ editing = false }: { editing?: boolean }) {
         }
       })
       .catch(() => {
-        // The local profile shell is the intentional offline fallback.
+        if (active) setMessage('Не удалось загрузить профиль');
       });
     return () => {
       active = false;
@@ -147,7 +147,7 @@ export function ProfileScreen({ editing = false }: { editing?: boolean }) {
             {photoUri ? (
               <Image source={{ uri: photoUri }} style={styles.photo} />
             ) : (
-              <Avatar name={profile?.name ?? 'Артём'} size={90} />
+              <Avatar name={profile?.name ?? 'Профиль'} size={90} />
             )}
             <View style={styles.heroCopy}>
               <Text style={styles.sectionTitle}>Фотографии</Text>
@@ -211,7 +211,11 @@ export function ProfileScreen({ editing = false }: { editing?: boolean }) {
               <Text style={styles.sectionTitle}>Безопасность</Text>
               <Text style={styles.muted}>Управление аккаунтом и поддержка</Text>
               <View style={styles.settingsActions}>
-                <Button label="Написать в поддержку" variant="ghost" />
+                <Button
+                  label="Написать в поддержку"
+                  variant="ghost"
+                  onPress={() => void Linking.openURL('mailto:hello@inera.by')}
+                />
                 <Button
                   label="Выйти"
                   variant="ghost"
