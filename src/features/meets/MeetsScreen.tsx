@@ -10,6 +10,14 @@ import { useIsDesktop } from '../../theme/layout';
 import { meetsApi } from '../../api/endpoints';
 import { useSessionStore } from '../../state/session';
 
+function canRateMeet(meet: Meet) {
+  return (
+    String(meet.status ?? '').toUpperCase() === 'PASSED' &&
+    meet.isRated === false &&
+    meet.isCancelled !== true
+  );
+}
+
 function stageMeta(stage: Meet['stages'][number]) {
   if (stage.subtitle) return stage.subtitle;
   if (stage.dateTime) {
@@ -54,9 +62,11 @@ export function MeetTimeline({ meet }: { meet: Meet }) {
 export function MeetDetail({ meet }: { meet: Meet }) {
   const router = useRouter();
   const demoMode = useSessionStore((state) => state.demoMode);
-  const active = meet.status !== 'PASSED';
+  const active = String(meet.status ?? '').toUpperCase() !== 'PASSED';
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const [justRated, setJustRated] = useState(false);
+  const canRate = canRateMeet(meet) && !justRated;
   const tag = formatTagLabel(meet.ferotag);
 
   const run = async (action: () => Promise<void>, success: string) => {
@@ -65,8 +75,10 @@ export function MeetDetail({ meet }: { meet: Meet }) {
     try {
       if (!demoMode) await action();
       setFeedback(success);
+      return true;
     } catch {
       setFeedback('Действие пока недоступно');
+      return false;
     } finally {
       setBusy(false);
     }
@@ -132,22 +144,27 @@ export function MeetDetail({ meet }: { meet: Meet }) {
           </>
         ) : (
           <>
-            <Button
-              label="Оценить встречу"
-              variant="secondary"
-              onPress={() =>
-                void run(
-                  () =>
-                    meetsApi.rate({
-                      meetId: meet.meetId,
-                      score: 5,
-                      comment: '',
-                      impressionTags: [],
-                    }),
-                  'Оценка отправлена',
-                )
-              }
-            />
+            {canRate ? (
+              <Button
+                disabled={busy}
+                label="Оценить встречу"
+                variant="secondary"
+                onPress={() =>
+                  void run(
+                    () =>
+                      meetsApi.rate({
+                        meetId: meet.meetId,
+                        score: 5,
+                        comment: '',
+                        impressionTags: [],
+                      }),
+                    'Оценка отправлена',
+                  ).then((ok) => {
+                    if (ok) setJustRated(true);
+                  })
+                }
+              />
+            ) : null}
             <Button
               disabled={busy}
               label="Скрыть"
@@ -169,7 +186,10 @@ export function MeetsScreen() {
   const [availableMeets, setAvailableMeets] = useState<Meet[]>(demoMode ? meets : []);
   const [loading, setLoading] = useState(!demoMode);
   const [error, setError] = useState('');
-  const filtered = availableMeets.filter((meet) => (tab === 'active' ? meet.status !== 'PASSED' : meet.status === 'PASSED'));
+  const filtered = availableMeets.filter((meet) => {
+    const passed = String(meet.status ?? '').toUpperCase() === 'PASSED';
+    return tab === 'active' ? !passed : passed;
+  });
 
   useEffect(() => {
     if (!hydrated || demoMode) return;
