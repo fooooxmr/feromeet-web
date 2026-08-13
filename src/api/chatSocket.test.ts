@@ -35,6 +35,7 @@ describe('FeromeetChatSocket', () => {
 
   it('opens native websocket without polling SockJS /info', async () => {
     const fetchMock = vi.fn();
+    const constructed: Array<{ url: string; protocols?: string | string[] }> = [];
     vi.stubGlobal('fetch', fetchMock);
     vi.stubGlobal(
       'WebSocket',
@@ -44,12 +45,17 @@ describe('FeromeetChatSocket', () => {
         onmessage = null;
         onerror = null;
         onclose = null;
+        constructor(url: string, protocols?: string | string[]) {
+          constructed.push({ url, protocols });
+        }
         close() {}
       },
     );
     const socket = new FeromeetChatSocket('token', 'chat-1');
     await socket.connect();
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(constructed[0]?.url).toContain('/websocket?access_token=token');
+    expect(constructed[0]?.protocols).toEqual(['feromeet.v1', 'token']);
     socket.disconnect();
   });
 });

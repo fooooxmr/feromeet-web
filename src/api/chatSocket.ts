@@ -137,8 +137,12 @@ export class FeromeetChatSocket {
       if (!NativeWebSocket) throw new Error('WebSocket is not available');
       const serverId = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
       const url = `${resolveChatWsBase()}/${serverId}/${sessionId()}/websocket`;
+      const token = this.token();
+      const wsUrl = token ? `${url}?access_token=${encodeURIComponent(token)}` : url;
       log('connect', { url });
-      this.socket = new NativeWebSocket(url);
+      this.socket = token
+        ? new NativeWebSocket(wsUrl, ['feromeet.v1', token])
+        : new NativeWebSocket(wsUrl);
       this.socket.onopen = () => log('open', { url });
       this.socket.onmessage = ({ data }) => {
         void asText(data).then((text) => this.handleSockJs(text));

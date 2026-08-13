@@ -55,6 +55,27 @@ function sockJsTarget(request: http.IncomingMessage) {
   return undefined;
 }
 
+function accessTokenFromRequest(request: http.IncomingMessage) {
+  const host = headerValue(request.headers.host) || 'localhost';
+  const url = new URL(request.url || '/', `https://${host}`);
+  const fromQuery = url.searchParams.get('access_token');
+  if (fromQuery) return fromQuery;
+  const forwarded = headerValue(request.headers['x-forwarded-uri']);
+  if (forwarded) {
+    try {
+      const token = new URL(forwarded, `https://${host}`).searchParams.get('access_token');
+      if (token) return token;
+    } catch {
+      /* ignore */
+    }
+  }
+  const protocols = (headerValue(request.headers['sec-websocket-protocol']) || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value && value !== 'feromeet.v1');
+  return protocols[0];
+}
+
 function reject(socket: { write: (chunk: string) => void; destroy: () => void }, status: string) {
   socket.write(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`);
   socket.destroy();
@@ -71,7 +92,11 @@ const server = http.createServer((_request, response) => {
   response.end('Expected WebSocket upgrade');
 });
 
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({
+  noServer: true,
+  handleProtocols: (protocols) =>
+    [...protocols].includes('feromeet.v1') ? 'feromeet.v1' : false,
+});
 
 server.on('upgrade', (request, socket, head) => {
   const origin = headerValue(request.headers.origin);
@@ -85,12 +110,14 @@ server.on('upgrade', (request, socket, head) => {
     return;
   }
 
+  const accessToken = accessTokenFromRequest(request);
+
   wss.handleUpgrade(request, socket, head, (client) => {
+    const headers: Record<string, string> = { 'User-Agent': 'okhttp/4.12.0' };
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
     const upstream = new WebSocket(
       `${UPSTREAM}/${target.serverId}/${target.session}/websocket`,
-      {
-        headers: { 'User-Agent': 'okhttp/4.12.0' },
-      },
+      { headers },
     );
 
     const pending: Array<{ data: WebSocket.RawData; binary: boolean }> = [];
