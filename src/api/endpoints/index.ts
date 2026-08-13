@@ -14,6 +14,8 @@ import {
   normalizeMeets,
   normalizePhone,
   normalizeChatMessages,
+  normalizeSearchPreference,
+  normalizeSearchSex,
 } from '../../domain/models';
 
 const post = <T>(path: string, body?: unknown, auth = true) =>
@@ -56,10 +58,15 @@ export const discoveryApi = {
     ),
 
   getPreference: () =>
-    apiRequest<SearchPreference>('/api/user/get-search-preference'),
+    apiRequest<unknown>('/api/user/get-search-preference').then(normalizeSearchPreference),
 
   savePreference: (preference: SearchPreference) =>
-    post<void>('/api/user/save/search-preference', preference),
+    post<void>('/api/user/save/search-preference', {
+      sex: normalizeSearchSex(preference.sex),
+      ageMin: preference.ageMin,
+      ageMax: preference.ageMax,
+      radius: preference.radius,
+    }),
 
   like: (userIdTo: string) =>
     post<void>('/api/reaction/add-like', { userIdTo }),

@@ -7,6 +7,9 @@ import {
   isUserOnline,
   normalizeChatMessages,
   normalizePhone,
+  normalizeSearchPreference,
+  normalizeSearchSex,
+  matchesSearchPreference,
 } from '../domain/models';
 
 afterEach(() => {
@@ -262,5 +265,55 @@ describe('normalizeChatMessages', () => {
         status: undefined,
       },
     ]);
+  });
+});
+
+describe('normalizeSearchPreference', () => {
+  it('maps Android sex values so the filter chip can match the saved preference', () => {
+    expect(normalizeSearchSex('woman')).toBe('woman');
+    expect(normalizeSearchSex('FEMALE')).toBe('woman');
+    expect(normalizeSearchSex('men')).toBe('man');
+    expect(normalizeSearchSex('ANY')).toBe('all');
+    expect(normalizeSearchPreference({ sex: 'woman', ageMin: 21, ageMax: 34, radius: 40 })).toEqual({
+      sex: 'woman',
+      ageMin: 21,
+      ageMax: 34,
+      radius: 40,
+    });
+  });
+
+  it('unwraps nested preference payloads', () => {
+    expect(
+      normalizeSearchPreference({ data: { sex: 'male', ageMin: 18, ageMax: 30, radius: 50 } }),
+    ).toEqual({ sex: 'man', ageMin: 18, ageMax: 30, radius: 50 });
+  });
+});
+
+describe('matchesSearchPreference', () => {
+  const base = {
+    id: 'u1',
+    name: 'A',
+    birthday: '1998-04-12',
+  };
+
+  it('compares normalized user gender against looking-for sex', () => {
+    expect(
+      matchesSearchPreference(
+        { ...base, gender: 'FEMALE' },
+        { sex: 'woman', ageMin: 18, ageMax: 40, radius: 50 },
+      ),
+    ).toBe(true);
+    expect(
+      matchesSearchPreference(
+        { ...base, gender: 'woman' },
+        { sex: 'FEMALE', ageMin: 18, ageMax: 40, radius: 50 },
+      ),
+    ).toBe(true);
+    expect(
+      matchesSearchPreference(
+        { ...base, gender: 'man' },
+        { sex: 'woman', ageMin: 18, ageMax: 40, radius: 50 },
+      ),
+    ).toBe(false);
   });
 });

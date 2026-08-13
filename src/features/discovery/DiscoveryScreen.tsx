@@ -11,7 +11,10 @@ import {
 } from 'react-native';
 import {
   ageFromBirthday,
+  DEFAULT_SEARCH_PREFERENCE,
   matchesSearchPreference,
+  normalizeSearchPreference,
+  normalizeSearchSex,
   photoUrl,
   userPhotos,
   type ExpenseType,
@@ -251,45 +254,54 @@ function FilterSheet({
   preference: SearchPreference;
   onSave: (preference: SearchPreference) => void;
 }) {
-  const [draft, setDraft] = useState(preference);
-  useEffect(() => setDraft(preference), [preference]);
+  const [draft, setDraft] = useState(() => normalizeSearchPreference(preference));
+  const selectedSex = normalizeSearchSex(draft.sex);
+  useEffect(() => {
+    if (visible) setDraft(normalizeSearchPreference(preference));
+  }, [visible, preference]);
 
   return (
     <Sheet visible={visible} title="Фильтры" onClose={onClose}>
       <Text style={styles.sectionLabel}>Кого показать</Text>
       <View style={styles.tagRow}>
-        {['ANY', 'FEMALE', 'MALE'].map((sex) => (
+        {(
+          [
+            { value: 'all', label: 'Все' },
+            { value: 'woman', label: 'Девушки' },
+            { value: 'man', label: 'Парни' },
+          ] as const
+        ).map((option) => (
           <Chip
-            key={sex}
-            label={sex === 'ANY' ? 'Все' : sex === 'FEMALE' ? 'Девушки' : 'Парни'}
-            active={draft.sex === sex}
-            onPress={() => setDraft({ ...draft, sex })}
+            key={option.value}
+            label={option.label}
+            active={selectedSex === option.value}
+            onPress={() => setDraft({ ...draft, sex: option.value })}
           />
         ))}
       </View>
       <SliderField
         label="Возраст от"
         min={18}
-        max={45}
+        max={100}
         value={draft.ageMin}
         onChange={(ageMin) => setDraft({ ...draft, ageMin: Math.min(ageMin, draft.ageMax) })}
       />
       <SliderField
         label="Возраст до"
         min={18}
-        max={45}
+        max={100}
         value={draft.ageMax}
         onChange={(ageMax) => setDraft({ ...draft, ageMax: Math.max(ageMax, draft.ageMin) })}
       />
       <SliderField
         label="Радиус"
         min={1}
-        max={200}
+        max={700}
         suffix=" км"
         value={draft.radius}
         onChange={(radius) => setDraft({ ...draft, radius })}
       />
-      <Button label="Сохранить" onPress={() => onSave(draft)} />
+      <Button label="Сохранить" onPress={() => onSave(normalizeSearchPreference(draft))} />
     </Sheet>
   );
 }
@@ -309,12 +321,7 @@ export function DiscoveryScreen() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [inviteError, setInviteError] = useState('');
-  const [preference, setPreference] = useState<SearchPreference>({
-    sex: 'ANY',
-    ageMin: 18,
-    ageMax: 45,
-    radius: 25,
-  });
+  const [preference, setPreference] = useState<SearchPreference>(DEFAULT_SEARCH_PREFERENCE);
   const source = (demoMode ? people : remotePeople ?? []).filter((user) =>
     matchesSearchPreference(user, preference),
   );
@@ -550,10 +557,13 @@ export function DiscoveryScreen() {
         preference={preference}
         onClose={() => setFilterOpen(false)}
         onSave={(value) => {
-          setPreference(value);
+          const next = normalizeSearchPreference(value);
+          setPreference(next);
           setFilterOpen(false);
           setIndex(0);
-          if (!demoMode) void discoveryApi.savePreference(value).then(loadUsers);
+          if (!demoMode) {
+            void discoveryApi.savePreference(next).catch(() => undefined).then(loadUsers);
+          }
         }}
       />
     </View>

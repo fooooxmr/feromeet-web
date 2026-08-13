@@ -54,12 +54,21 @@ export interface FeromeetUser {
   isFavorite?: boolean;
 }
 
+export type SearchSex = 'man' | 'woman' | 'all';
+
 export interface SearchPreference {
-  sex: string;
+  sex: SearchSex | string;
   ageMin: number;
   ageMax: number;
   radius: number;
 }
+
+export const DEFAULT_SEARCH_PREFERENCE: SearchPreference = {
+  sex: 'all',
+  ageMin: 18,
+  ageMax: 30,
+  radius: 50,
+};
 
 export type ExpenseType = 'I_PAY' | 'SPLIT' | 'YOU_PAY' | string;
 
@@ -194,12 +203,53 @@ export function normalizePhone(raw: string) {
   return local ? `+375${local}` : '';
 }
 
+/** Maps Android/backend sex values: male/men/man → man, female/women/woman → woman, else all. */
+export function normalizeSearchSex(value?: string | null): SearchSex {
+  const key = String(value ?? '').trim().toLowerCase();
+  if (key === 'man' || key === 'men' || key === 'male') return 'man';
+  if (key === 'woman' || key === 'women' || key === 'female') return 'woman';
+  return 'all';
+}
+
+function preferenceRecord(payload: unknown): Record<string, unknown> {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return {};
+  const record = payload as Record<string, unknown>;
+  if (typeof record.sex === 'string' || record.ageMin != null || record.ageMax != null) {
+    return record;
+  }
+  for (const key of ['data', 'content', 'result', 'body'] as const) {
+    const nested = record[key];
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      const inner = preferenceRecord(nested);
+      if (typeof inner.sex === 'string' || inner.ageMin != null) return inner;
+    }
+  }
+  return record;
+}
+
+function preferenceInt(value: unknown, fallback: number) {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? Math.round(n) : fallback;
+}
+
+export function normalizeSearchPreference(payload: unknown): SearchPreference {
+  const record = preferenceRecord(payload);
+  const ageMin = preferenceInt(record.ageMin, DEFAULT_SEARCH_PREFERENCE.ageMin);
+  const ageMax = preferenceInt(record.ageMax, DEFAULT_SEARCH_PREFERENCE.ageMax);
+  return {
+    sex: normalizeSearchSex(typeof record.sex === 'string' ? record.sex : undefined),
+    ageMin,
+    ageMax: Math.max(ageMax, ageMin),
+    radius: preferenceInt(record.radius, DEFAULT_SEARCH_PREFERENCE.radius),
+  };
+}
+
 export function matchesSearchPreference(user: FeromeetUser, preference: SearchPreference) {
   const age = ageFromBirthday(user.birthday);
   if (age != null && (age < preference.ageMin || age > preference.ageMax)) return false;
-  if (preference.sex && preference.sex !== 'ANY') {
-    const gender = (user.gender || '').toUpperCase();
-    if (gender && gender !== preference.sex.toUpperCase()) return false;
+  const wanted = normalizeSearchSex(preference.sex);
+  if (wanted !== 'all' && user.gender) {
+    if (normalizeSearchSex(user.gender) !== wanted) return false;
   }
   return true;
 }
