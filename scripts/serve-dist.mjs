@@ -36,6 +36,15 @@ createServer((request, response) => {
   const file = join(root, safePath);
 
   if (!existsSync(file)) {
+    const spaIndex = join(root, 'index.html');
+    if (!extname(pathname) && existsSync(spaIndex)) {
+      response.writeHead(200, {
+        'Cache-Control': 'no-store',
+        'Content-Type': types['.html'],
+      });
+      createReadStream(spaIndex).pipe(response);
+      return;
+    }
     response.writeHead(404, { 'Content-Type': 'text/plain' });
     response.end('Not found');
     return;
