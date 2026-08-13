@@ -58,8 +58,10 @@ describe('chat message helpers', () => {
     expect(next.map((item) => item.status)).toEqual(['READ', 'DELIVERED', 'DELIVERED']);
   });
 
-  it('shows Android-style single/double ticks only when status is known', () => {
+  it('shows Android-style single/double ticks only after the server acks', () => {
     expect(outgoingReceiptMark(undefined)).toBe('');
+    expect(outgoingReceiptMark('PENDING')).toBe('');
+    expect(outgoingReceiptMark('SENDING')).toBe('');
     expect(outgoingReceiptMark('DELIVERED')).toBe('  ✓');
     expect(outgoingReceiptMark('READ')).toBe('  ✓✓');
   });

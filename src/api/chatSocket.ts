@@ -1,4 +1,4 @@
-import { apiRequest } from './client';
+import { API_BASE_URL, apiRequest } from './client';
 import { normalizeChatMessage, type ChatMessage } from '../domain/models';
 
 type SocketState = 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -20,6 +20,30 @@ interface Subscription {
 interface QueuedSend {
   destination: string;
   body: string;
+}
+
+export function resolveChatWsBase(options?: {
+  apiBaseUrl?: string;
+  envWsUrl?: string;
+  browser?: boolean;
+}): string {
+  const apiBaseUrl = options?.apiBaseUrl ?? API_BASE_URL;
+  const envWsUrl = options?.envWsUrl ?? process.env.EXPO_PUBLIC_WS_URL;
+  const browser = options?.browser ?? typeof window !== 'undefined';
+  const configured = envWsUrl?.replace(/\/$/, '');
+  if (!browser) {
+    return configured || 'wss://feromeet.com/ws-chat';
+  }
+  try {
+    const api = new URL(apiBaseUrl);
+    return `${api.protocol === 'https:' ? 'wss:' : 'ws:'}//${api.host}/api/ws-chat`;
+  } catch {
+    return 'wss://feromeet.com/ws-chat';
+  }
+}
+
+function log(event: string, extra?: Record<string, unknown>) {
+  console.info('[feromeet] chat socket', event, extra ?? '');
 }
 
 function sessionId(): string {
@@ -102,8 +126,7 @@ export class FeromeetChatSocket {
     this.teardownSocket();
     this.callbacks.onState?.('connecting');
     try {
-      const wsBase =
-        process.env.EXPO_PUBLIC_WS_URL?.replace(/\/$/, '') || 'wss://feromeet.com/ws-chat';
+      const wsBase = resolveChatWsBase();
       let serverId = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
       try {
         const info = await apiRequest<{ entropy?: number }>('/ws-chat/info');
@@ -115,18 +138,22 @@ export class FeromeetChatSocket {
       }
       if (this.closedByUser || generation !== this.generation) return;
       const url = `${wsBase}/${serverId}/${sessionId()}/websocket`;
+      log('connect', { url });
       this.socket = new WebSocket(url);
+      this.socket.onopen = () => log('open', { url });
       this.socket.onmessage = ({ data }) => {
         void asText(data).then((text) => this.handleSockJs(text));
       };
       this.socket.onerror = () => {
         const error = new Error('Realtime chat connection failed');
+        log('error', { url });
         this.callbacks.onState?.('error');
         this.callbacks.onError?.(error);
       };
       this.socket.onclose = () => {
         this.connected = false;
         this.stopHeartbeat();
+        log('close', { url });
         this.callbacks.onState?.('disconnected');
         this.scheduleReconnect();
       };
@@ -169,6 +196,7 @@ export class FeromeetChatSocket {
     if (command === 'CONNECTED') {
       this.connected = true;
       this.attempts = 0;
+      log('connected');
       this.callbacks.onState?.('connected');
       this.startHeartbeat();
       this.subscribe(
@@ -192,6 +220,7 @@ export class FeromeetChatSocket {
 
     if (command === 'ERROR') {
       this.connected = false;
+      log('stomp-error');
       this.callbacks.onState?.('error');
       this.callbacks.onError?.(
         new Error(bodyParts.join('\n\n').replace(/\u0000$/, '') || 'STOMP error'),
@@ -229,18 +258,22 @@ export class FeromeetChatSocket {
   }
 
   private enqueueOrSend(destination: string, body: string) {
-    if (!this.connected) {
-      this.outboundQueue.push({ destination, body });
+    if (this.connected && this.socket?.readyState === WebSocket.OPEN) {
+      this.sendStomp(destination, body);
+      log('send', { destination });
       return true;
     }
-    this.sendStomp(destination, body);
-    return true;
+    this.outboundQueue.push({ destination, body });
+    return false;
   }
 
   private flushOutbound() {
     const queued = this.outboundQueue;
     this.outboundQueue = [];
-    queued.forEach((item) => this.sendStomp(item.destination, item.body));
+    queued.forEach((item) => {
+      this.sendStomp(item.destination, item.body);
+      log('send', { destination: item.destination });
+    });
     if (this.pendingReadId) {
       const lastReadMessageId = this.pendingReadId;
       this.pendingReadId = undefined;
@@ -289,6 +322,7 @@ export class FeromeetChatSocket {
       this.socket.onclose = null;
       this.socket.onerror = null;
       this.socket.onmessage = null;
+      this.socket.onopen = null;
       if (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING) {
         this.socket.close(1000, 'Normal closure');
       }

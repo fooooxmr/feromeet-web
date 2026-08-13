@@ -195,6 +195,15 @@ export function ChatScreen() {
           if (state === 'connected') {
             markIncomingRead(messagesRef.current);
             flushPendingSends();
+            setMessages((current) => {
+              const next = current.map((item) =>
+                item.id.startsWith('local-') && item.status === 'PENDING'
+                  ? { ...item, status: 'SENDING' }
+                  : item,
+              );
+              messagesRef.current = next;
+              return next;
+            });
           }
         },
       });
@@ -272,9 +281,8 @@ export function ChatScreen() {
       peerIdFromMessages(messagesRef.current, currentUserIdRef.current);
     if (peer) rememberPeer(peer);
     let sent = false;
-    if (peer) {
-      sent = socketRef.current?.sendMessage(peer, content) ?? false;
-      if (!sent) pendingSends.current.push(content);
+    if (peer && socketRef.current) {
+      sent = socketRef.current.sendMessage(peer, content);
     } else {
       pendingSends.current.push(content);
     }
@@ -288,7 +296,7 @@ export function ChatScreen() {
           chatId,
           content,
           createdAt: new Date().toISOString(),
-          status: sent || peer ? 'SENDING' : 'PREVIEW',
+          status: sent ? 'SENDING' : 'PENDING',
         },
       ];
       messagesRef.current = next;

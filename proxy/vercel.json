@@ -1,14 +1,21 @@
 {
   "framework": null,
   "functions": {
-    "api/**/*.ts": {
+    "api/proxy/**/*.ts": {
       "maxDuration": 10
+    },
+    "api/ws-chat.ts": {
+      "maxDuration": 300
     }
   },
   "rewrites": [
     {
       "source": "/api/proxy/:path*",
       "destination": "/api/proxy/bridge?upstream=:path*"
+    },
+    {
+      "source": "/api/ws-chat/:path*",
+      "destination": "/api/ws-chat?upstream=/api/ws-chat/:path*"
     }
   ],
   "headers": [

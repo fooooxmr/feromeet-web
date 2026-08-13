@@ -86,7 +86,8 @@ export function lastIncomingId(messages: ChatMessage[], ownId: string): string |
 export function outgoingReceiptMark(status?: string): string {
   if (!status) return '';
   const value = status.toUpperCase();
-  if (value === 'PREVIEW') return '';
   if (value === 'READ') return '  ✓✓';
-  return '  ✓';
+  if (value === 'DELIVERED') return '  ✓';
+  if (value === 'FAILED') return '  !';
+  return '';
 }
