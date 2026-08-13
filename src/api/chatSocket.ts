@@ -17,6 +17,11 @@ interface Subscription {
   callback: (body: string) => void;
 }
 
+interface QueuedSend {
+  destination: string;
+  body: string;
+}
+
 function sessionId(): string {
   const alphabet =
     'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -28,21 +33,43 @@ function sessionId(): string {
 
 function safePayload(body: string): unknown {
   try {
-    return JSON.parse(body.replace(/\u0000$/, ''));
+    return JSON.parse(body.replace(/\u0000$/, '').trim());
   } catch {
     return body.replace(/\u0000$/, '');
   }
 }
 
 function sockJsFrames(payload: string): string[] {
-  if (payload === 'o' || payload === 'h' || payload.startsWith('c[')) return [];
+  const trimmed = payload.trim();
+  if (trimmed === 'o' || trimmed === 'h' || trimmed.startsWith('c[')) return [];
   try {
-    if (payload.startsWith('a[')) return JSON.parse(payload.slice(1)) as string[];
-    if (payload.startsWith('[')) return JSON.parse(payload) as string[];
+    if (trimmed.startsWith('a')) {
+      const start = trimmed.indexOf('[');
+      const end = trimmed.lastIndexOf(']');
+      if (start >= 0 && end > start) {
+        return JSON.parse(trimmed.slice(start, end + 1)) as string[];
+      }
+    }
+    if (trimmed.startsWith('[')) return JSON.parse(trimmed) as string[];
   } catch {
     return [payload];
   }
   return [payload];
+}
+
+function encodeSockJs(frame: string) {
+  return `["${frame
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\u0000/g, '\\u0000')}"]`;
+}
+
+async function asText(data: unknown): Promise<string> {
+  if (typeof data === 'string') return data;
+  if (data instanceof ArrayBuffer) return new TextDecoder().decode(data);
+  if (typeof Blob !== 'undefined' && data instanceof Blob) return data.text();
+  return String(data ?? '');
 }
 
 export class FeromeetChatSocket {
@@ -55,12 +82,18 @@ export class FeromeetChatSocket {
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private attempts = 0;
   private generation = 0;
+  private outboundQueue: QueuedSend[] = [];
+  private pendingReadId?: string;
 
   constructor(
     private readonly accessToken: string,
     private readonly chatId: string,
     private readonly callbacks: ChatSocketCallbacks = {},
   ) {}
+
+  get isConnected() {
+    return this.connected;
+  }
 
   async connect() {
     if (this.closedByUser) return;
@@ -73,7 +106,7 @@ export class FeromeetChatSocket {
         process.env.EXPO_PUBLIC_WS_URL?.replace(/\/$/, '') || 'wss://feromeet.com/ws-chat';
       let serverId = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
       try {
-        const info = await apiRequest<{ entropy?: number }>('/ws-chat/info', { auth: false });
+        const info = await apiRequest<{ entropy?: number }>('/ws-chat/info');
         if (info?.entropy != null) {
           serverId = String(Math.abs(info.entropy % 1000)).padStart(3, '0');
         }
@@ -83,7 +116,9 @@ export class FeromeetChatSocket {
       if (this.closedByUser || generation !== this.generation) return;
       const url = `${wsBase}/${serverId}/${sessionId()}/websocket`;
       this.socket = new WebSocket(url);
-      this.socket.onmessage = ({ data }) => this.handleSockJs(String(data));
+      this.socket.onmessage = ({ data }) => {
+        void asText(data).then((text) => this.handleSockJs(text));
+      };
       this.socket.onerror = () => {
         const error = new Error('Realtime chat connection failed');
         this.callbacks.onState?.('error');
@@ -105,7 +140,7 @@ export class FeromeetChatSocket {
   }
 
   private handleSockJs(payload: string) {
-    if (payload === 'o') {
+    if (payload.trim() === 'o') {
       this.sendFrame(
         `CONNECT\naccept-version:1.1,1.0\nheart-beat:10000,10000\nAuthorization:Bearer ${this.accessToken}\n\n\u0000`,
       );
@@ -117,10 +152,11 @@ export class FeromeetChatSocket {
   private handleStompFrame(frame: string) {
     const normalized = frame
       .replaceAll('\\n', '\n')
-      .replaceAll('\\u0000', '\u0000');
+      .replaceAll('\\u0000', '\u0000')
+      .replaceAll('\r', '');
     const [headerBlock, ...bodyParts] = normalized.split('\n\n');
     const headerLines = headerBlock?.split('\n') || [];
-    const command = headerLines.shift();
+    const command = (headerLines.shift() || '').trim();
     const headers = Object.fromEntries(
       headerLines.map((line) => {
         const separator = line.indexOf(':');
@@ -150,6 +186,17 @@ export class FeromeetChatSocket {
         `/user/queue/chat.${this.chatId}.typing-status`,
         (body) => this.callbacks.onTyping?.(safePayload(body)),
       );
+      this.flushOutbound();
+      return;
+    }
+
+    if (command === 'ERROR') {
+      this.connected = false;
+      this.callbacks.onState?.('error');
+      this.callbacks.onError?.(
+        new Error(bodyParts.join('\n\n').replace(/\u0000$/, '') || 'STOMP error'),
+      );
+      this.socket?.close(1000, 'STOMP Error');
       return;
     }
 
@@ -171,7 +218,36 @@ export class FeromeetChatSocket {
 
   private sendFrame(frame: string) {
     if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify([frame]));
+      this.socket.send(encodeSockJs(frame));
+    }
+  }
+
+  private sendStomp(destination: string, body: string) {
+    this.sendFrame(
+      `SEND\ndestination:${destination}\ncontent-type:application/json\n\n${body}\u0000`,
+    );
+  }
+
+  private enqueueOrSend(destination: string, body: string) {
+    if (!this.connected) {
+      this.outboundQueue.push({ destination, body });
+      return true;
+    }
+    this.sendStomp(destination, body);
+    return true;
+  }
+
+  private flushOutbound() {
+    const queued = this.outboundQueue;
+    this.outboundQueue = [];
+    queued.forEach((item) => this.sendStomp(item.destination, item.body));
+    if (this.pendingReadId) {
+      const lastReadMessageId = this.pendingReadId;
+      this.pendingReadId = undefined;
+      this.sendStomp(
+        '/app/chat/read',
+        JSON.stringify({ chatId: this.chatId, lastReadMessageId }),
+      );
     }
   }
 
@@ -179,7 +255,7 @@ export class FeromeetChatSocket {
     this.stopHeartbeat();
     this.heartbeatTimer = setInterval(() => {
       if (this.socket?.readyState === WebSocket.OPEN) {
-        this.socket.send(JSON.stringify(['\n']));
+        this.socket.send(encodeSockJs('\n'));
       }
     }, 10000);
   }
@@ -221,30 +297,30 @@ export class FeromeetChatSocket {
   }
 
   sendMessage(recipientId: string, content: string) {
-    if (!this.connected || !recipientId) return false;
-    this.sendFrame(
-      `SEND\ndestination:/app/chat/send\ncontent-type:application/json\n\n${JSON.stringify(
-        { recipientId, content, chatId: this.chatId },
-      )}\u0000`,
+    if (!recipientId || !content) return false;
+    return this.enqueueOrSend(
+      '/app/chat/send',
+      JSON.stringify({ recipientId, content, chatId: this.chatId }),
     );
-    return true;
   }
 
   sendTyping(recipientId: string, isTyping: boolean) {
     if (!this.connected || !recipientId) return;
-    this.sendFrame(
-      `SEND\ndestination:/app/chat/typing\ncontent-type:application/json\n\n${JSON.stringify(
-        { recipientId, isTyping, chatId: this.chatId },
-      )}\u0000`,
+    this.sendStomp(
+      '/app/chat/typing',
+      JSON.stringify({ recipientId, isTyping, chatId: this.chatId }),
     );
   }
 
   markRead(lastReadMessageId: string) {
-    if (!this.connected) return;
-    this.sendFrame(
-      `SEND\ndestination:/app/chat/read\ncontent-type:application/json\n\n${JSON.stringify(
-        { chatId: this.chatId, lastReadMessageId },
-      )}\u0000`,
+    if (!lastReadMessageId || lastReadMessageId.startsWith('local-')) return;
+    if (!this.connected) {
+      this.pendingReadId = lastReadMessageId;
+      return;
+    }
+    this.sendStomp(
+      '/app/chat/read',
+      JSON.stringify({ chatId: this.chatId, lastReadMessageId }),
     );
   }
 
@@ -252,6 +328,8 @@ export class FeromeetChatSocket {
     this.closedByUser = true;
     this.generation += 1;
     this.clearReconnect();
+    this.outboundQueue = [];
+    this.pendingReadId = undefined;
     if (this.connected) this.sendFrame('DISCONNECT\n\n\u0000');
     this.teardownSocket();
   }

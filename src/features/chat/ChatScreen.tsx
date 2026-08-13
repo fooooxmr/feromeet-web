@@ -24,6 +24,13 @@ import { ApiError } from '../../api/client';
 import { chatApi, meetsApi, profileApi } from '../../api/endpoints';
 import { FeromeetChatSocket } from '../../api/chatSocket';
 import { useSessionStore } from '../../state/session';
+import {
+  applyMessageStatus,
+  lastIncomingId,
+  outgoingReceiptMark,
+  peerIdFromMessages,
+  upsertChatMessage,
+} from './chatMessages';
 
 function asChatId(value: string | string[] | undefined) {
   const chatId = Array.isArray(value) ? value[0] : value;
@@ -75,6 +82,35 @@ export function ChatScreen() {
   const listRef = useRef<ScrollView>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const typingSent = useRef(false);
+  const recipientIdRef = useRef(recipientId);
+  const currentUserIdRef = useRef(currentUserId);
+  const messagesRef = useRef(messages);
+  const pendingSends = useRef<string[]>([]);
+  recipientIdRef.current = recipientId;
+  currentUserIdRef.current = currentUserId;
+  messagesRef.current = messages;
+
+  const rememberPeer = (peer?: string) => {
+    const id = peer?.trim();
+    if (!id) return;
+    recipientIdRef.current = id;
+    setRecipientId(id);
+    setPeerUserId((current) => current || id);
+  };
+
+  const markIncomingRead = (list: ChatMessage[]) => {
+    const lastId = lastIncomingId(list, currentUserIdRef.current);
+    if (lastId) socketRef.current?.markRead(lastId);
+  };
+
+  const flushPendingSends = () => {
+    const peer = recipientIdRef.current;
+    const socket = socketRef.current;
+    if (!peer || !socket) return;
+    const waiting = pendingSends.current;
+    pendingSends.current = [];
+    waiting.forEach((content) => socket.sendMessage(peer, content));
+  };
 
   useEffect(() => {
     if (!chatId || !hydrated) return;
@@ -92,6 +128,7 @@ export function ChatScreen() {
 
     setLoading(true);
     setHistoryError('');
+    setMessages([]);
 
     void (async () => {
       const [profile, activeMeets, passedMeets] = await Promise.all([
@@ -101,7 +138,10 @@ export function ChatScreen() {
       ]);
       if (!active) return;
       const ownId = profileId(profile);
-      if (ownId) setCurrentUserId(ownId);
+      if (ownId) {
+        currentUserIdRef.current = ownId;
+        setCurrentUserId(ownId);
+      }
       const meet = [...activeMeets, ...passedMeets].find(
         (item) =>
           String(item.chatId) === String(chatId) || String(item.meetId) === String(chatId),
@@ -109,10 +149,10 @@ export function ChatScreen() {
       const resolvedChatId = meet?.chatId || chatId;
       if (meet?.user) {
         const user = meet.user as FeromeetUser;
+        const peer = user.id != null && String(user.id).trim() ? String(user.id) : '';
         setPeerName(user.name);
         setMeetId(meet.meetId);
-        setRecipientId(String(user.id));
-        setPeerUserId(String(user.id));
+        rememberPeer(peer);
         setPeerPhoto(photoUrl(user.mainSmallPhotoFilename || user.mainPhotoFilename));
         setPeerLastSeen(user.lastSeen || meet.lastSeen);
         void meetsApi.markAsRead(meet.meetId).catch(() => undefined);
@@ -122,12 +162,23 @@ export function ChatScreen() {
       const socket = new FeromeetChatSocket(accessToken, resolvedChatId, {
         onMessage: (message) => {
           if (!active) return;
-          setMessages((current) =>
-            current.some((item) => item.id === message.id)
-              ? current
-              : [...current, message],
-          );
-          socket.markRead(message.id);
+          setMessages((current) => {
+            const next = upsertChatMessage(current, message);
+            messagesRef.current = next;
+            return next;
+          });
+          const own = currentUserIdRef.current;
+          if (own && String(message.senderId) !== String(own)) {
+            socket.markRead(message.id);
+          }
+        },
+        onStatus: (payload) => {
+          if (!active) return;
+          setMessages((current) => {
+            const next = applyMessageStatus(current, payload, currentUserIdRef.current);
+            messagesRef.current = next;
+            return next;
+          });
         },
         onTyping: (payload) => {
           if (active) setTyping(typingActive(payload));
@@ -141,6 +192,10 @@ export function ChatScreen() {
                 ? 'connecting'
                 : 'offline',
           );
+          if (state === 'connected') {
+            markIncomingRead(messagesRef.current);
+            flushPendingSends();
+          }
         },
       });
       socketRef.current = socket;
@@ -149,13 +204,18 @@ export function ChatScreen() {
       try {
         const history = await chatApi.getHistory(resolvedChatId);
         if (!active) return;
+        rememberPeer(peerIdFromMessages(history, currentUserIdRef.current));
         setMessages((current) => {
           const merged = [...history];
           current.forEach((item) => {
             if (!merged.some((message) => message.id === item.id)) merged.push(item);
           });
-          return merged.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+          const next = merged.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+          messagesRef.current = next;
+          return next;
         });
+        markIncomingRead(history);
+        flushPendingSends();
         setHistoryError('');
       } catch (error) {
         if (!active) return;
@@ -180,41 +240,60 @@ export function ChatScreen() {
     };
   }, [accessToken, chatId, demoMode, hydrated, reloadKey]);
 
+  useEffect(() => {
+    if (recipientId && socketState === 'connected') flushPendingSends();
+  }, [recipientId, socketState]);
+
   const reportTyping = (active: boolean) => {
-    if (!recipientId) return;
+    const peer = recipientIdRef.current;
+    if (!peer) return;
     if (active) {
       if (!typingSent.current) {
-        socketRef.current?.sendTyping(recipientId, true);
+        socketRef.current?.sendTyping(peer, true);
         typingSent.current = true;
       }
       if (typingTimer.current) clearTimeout(typingTimer.current);
       typingTimer.current = setTimeout(() => {
-        socketRef.current?.sendTyping(recipientId, false);
+        socketRef.current?.sendTyping(peer, false);
         typingSent.current = false;
       }, 2000);
       return;
     }
     if (typingTimer.current) clearTimeout(typingTimer.current);
-    if (typingSent.current) socketRef.current?.sendTyping(recipientId, false);
+    if (typingSent.current) socketRef.current?.sendTyping(peer, false);
     typingSent.current = false;
   };
 
   const send = () => {
     const content = draft.trim();
     if (!content || !chatId) return;
-    const sent = socketRef.current?.sendMessage(recipientId, content) ?? false;
-    setMessages((current) => [
-      ...current,
-      {
-        id: `local-${Date.now()}`,
-        senderId: currentUserId,
-        recipientId,
-        chatId,
-        content,
-        createdAt: new Date().toISOString(),
-        status: sent ? 'SENDING' : 'PREVIEW',
-      },
-    ]);
+    const peer =
+      recipientIdRef.current ||
+      peerIdFromMessages(messagesRef.current, currentUserIdRef.current);
+    if (peer) rememberPeer(peer);
+    let sent = false;
+    if (peer) {
+      sent = socketRef.current?.sendMessage(peer, content) ?? false;
+      if (!sent) pendingSends.current.push(content);
+    } else {
+      pendingSends.current.push(content);
+    }
+    setMessages((current) => {
+      const next = [
+        ...current,
+        {
+          id: `local-${Date.now()}`,
+          senderId: currentUserIdRef.current,
+          recipientId: peer,
+          chatId,
+          content,
+          createdAt: new Date().toISOString(),
+          status: sent || peer ? 'SENDING' : 'PREVIEW',
+        },
+      ];
+      messagesRef.current = next;
+      return next;
+    });
     setDraft('');
     reportTyping(false);
   };
@@ -292,7 +371,7 @@ export function ChatScreen() {
                       hour: '2-digit',
                       minute: '2-digit',
                     })}
-                    {mine ? '  ✓' : ''}
+                    {mine ? outgoingReceiptMark(message.status) : ''}
                   </Text>
                 </View>
               </View>
