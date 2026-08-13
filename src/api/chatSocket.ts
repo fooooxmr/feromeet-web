@@ -1,4 +1,4 @@
-import { API_BASE_URL, apiRequest } from './client';
+import { API_BASE_URL } from './client';
 import { normalizeChatMessage, type ChatMessage } from '../domain/models';
 
 type SocketState = 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -9,6 +9,7 @@ interface ChatSocketCallbacks {
   onTyping?: (payload: unknown) => void;
   onState?: (state: SocketState) => void;
   onError?: (error: Error) => void;
+  getAccessToken?: () => string | undefined;
 }
 
 interface Subscription {
@@ -108,6 +109,7 @@ export class FeromeetChatSocket {
   private generation = 0;
   private outboundQueue: QueuedSend[] = [];
   private pendingReadId?: string;
+  private stableTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
     private readonly accessToken: string,
@@ -119,6 +121,10 @@ export class FeromeetChatSocket {
     return this.connected;
   }
 
+  private token() {
+    return this.callbacks.getAccessToken?.() || this.accessToken;
+  }
+
   async connect() {
     if (this.closedByUser) return;
     const generation = ++this.generation;
@@ -126,20 +132,13 @@ export class FeromeetChatSocket {
     this.teardownSocket();
     this.callbacks.onState?.('connecting');
     try {
-      const wsBase = resolveChatWsBase();
-      let serverId = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
-      try {
-        const info = await apiRequest<{ entropy?: number }>('/ws-chat/info');
-        if (info?.entropy != null) {
-          serverId = String(Math.abs(info.entropy % 1000)).padStart(3, '0');
-        }
-      } catch {
-        /* SockJS info is optional; still open the websocket. */
-      }
       if (this.closedByUser || generation !== this.generation) return;
-      const url = `${wsBase}/${serverId}/${sessionId()}/websocket`;
+      const NativeWebSocket = globalThis.WebSocket;
+      if (!NativeWebSocket) throw new Error('WebSocket is not available');
+      const serverId = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
+      const url = `${resolveChatWsBase()}/${serverId}/${sessionId()}/websocket`;
       log('connect', { url });
-      this.socket = new WebSocket(url);
+      this.socket = new NativeWebSocket(url);
       this.socket.onopen = () => log('open', { url });
       this.socket.onmessage = ({ data }) => {
         void asText(data).then((text) => this.handleSockJs(text));
@@ -153,6 +152,7 @@ export class FeromeetChatSocket {
       this.socket.onclose = () => {
         this.connected = false;
         this.stopHeartbeat();
+        this.clearStableTimer();
         log('close', { url });
         this.callbacks.onState?.('disconnected');
         this.scheduleReconnect();
@@ -167,10 +167,21 @@ export class FeromeetChatSocket {
   }
 
   private handleSockJs(payload: string) {
-    if (payload.trim() === 'o') {
+    const trimmed = payload.trim();
+    if (trimmed === 'o') {
+      const token = this.token();
+      if (!token) {
+        log('connect-skip', { reason: 'no-token' });
+        return;
+      }
       this.sendFrame(
-        `CONNECT\naccept-version:1.1,1.0\nheart-beat:10000,10000\nAuthorization:Bearer ${this.accessToken}\n\n\u0000`,
+        `CONNECT\naccept-version:1.1,1.0\nheart-beat:10000,10000\nAuthorization:Bearer ${token}\n\n\u0000`,
       );
+      return;
+    }
+    if (trimmed.startsWith('c[')) {
+      log('sockjs-close', { frame: trimmed.slice(0, 40) });
+      this.connected = false;
       return;
     }
     sockJsFrames(payload).forEach((frame) => this.handleStompFrame(frame));
@@ -195,7 +206,10 @@ export class FeromeetChatSocket {
 
     if (command === 'CONNECTED') {
       this.connected = true;
-      this.attempts = 0;
+      this.clearStableTimer();
+      this.stableTimer = setTimeout(() => {
+        this.attempts = 0;
+      }, 4000);
       log('connected');
       this.callbacks.onState?.('connected');
       this.startHeartbeat();
@@ -220,12 +234,10 @@ export class FeromeetChatSocket {
 
     if (command === 'ERROR') {
       this.connected = false;
-      log('stomp-error');
+      const message = bodyParts.join('\n\n').replace(/\u0000$/, '') || 'STOMP error';
+      log('stomp-error', { message: message.slice(0, 120) });
       this.callbacks.onState?.('error');
-      this.callbacks.onError?.(
-        new Error(bodyParts.join('\n\n').replace(/\u0000$/, '') || 'STOMP error'),
-      );
-      this.socket?.close(1000, 'STOMP Error');
+      this.callbacks.onError?.(new Error(message));
       return;
     }
 
@@ -300,12 +312,18 @@ export class FeromeetChatSocket {
 
   private scheduleReconnect() {
     if (this.closedByUser || this.reconnectTimer) return;
-    const delay = Math.min(1000 * 2 ** this.attempts, 15000);
+    const delay = Math.min(2000 * 2 ** this.attempts, 15000);
     this.attempts += 1;
+    log('reconnect', { delay, attempts: this.attempts });
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
       void this.connect();
     }, delay);
+  }
+
+  private clearStableTimer() {
+    if (this.stableTimer) clearTimeout(this.stableTimer);
+    this.stableTimer = undefined;
   }
 
   private clearReconnect() {
@@ -315,6 +333,7 @@ export class FeromeetChatSocket {
 
   private teardownSocket() {
     this.stopHeartbeat();
+    this.clearStableTimer();
     this.connected = false;
     this.subscriptions = [];
     this.nextSubscriptionId = 1;

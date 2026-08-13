@@ -160,6 +160,7 @@ export function ChatScreen() {
 
       setSocketState('connecting');
       const socket = new FeromeetChatSocket(accessToken, resolvedChatId, {
+        getAccessToken: () => useSessionStore.getState().accessToken || accessToken,
         onMessage: (message) => {
           if (!active) return;
           setMessages((current) => {

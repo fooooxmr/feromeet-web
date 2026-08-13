@@ -60,8 +60,8 @@ describe('chat message helpers', () => {
 
   it('shows Android-style single/double ticks only after the server acks', () => {
     expect(outgoingReceiptMark(undefined)).toBe('');
-    expect(outgoingReceiptMark('PENDING')).toBe('');
-    expect(outgoingReceiptMark('SENDING')).toBe('');
+    expect(outgoingReceiptMark('PENDING')).toBe('  …');
+    expect(outgoingReceiptMark('SENDING')).toBe('  …');
     expect(outgoingReceiptMark('DELIVERED')).toBe('  ✓');
     expect(outgoingReceiptMark('READ')).toBe('  ✓✓');
   });

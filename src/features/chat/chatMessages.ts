@@ -89,5 +89,6 @@ export function outgoingReceiptMark(status?: string): string {
   if (value === 'READ') return '  ✓✓';
   if (value === 'DELIVERED') return '  ✓';
   if (value === 'FAILED') return '  !';
+  if (value === 'PENDING' || value === 'SENDING') return '  …';
   return '';
 }

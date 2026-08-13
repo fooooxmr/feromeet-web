@@ -107,6 +107,7 @@ server.on('upgrade', (request, socket, head) => {
       }
     };
 
+    pipe(upstream, client);
     client.on('message', (data, isBinary) => {
       if (upstream.readyState === WebSocket.OPEN) {
         upstream.send(data, { binary: isBinary });
@@ -123,7 +124,6 @@ server.on('upgrade', (request, socket, head) => {
           upstream.send(item.data, { binary: item.binary });
         }
       });
-      pipe(upstream, client);
     });
     upstream.on('close', closeBoth);
     upstream.on('error', closeBoth);
